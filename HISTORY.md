@@ -1,3 +1,12 @@
+# 2017-05-18
+Whoa that was painful.  Getting a Beagle Bone Black Wireless I2C to talk to
+the Arduino Mega 2560.  The python mraa library works, but does not have 
+anywhere near the capabilities of the Wire library.   For now, we might be
+stuck with the BBBW as the master.  
+
+Time to diagram the communication and devices as we know things can talk to
+one another over I2C.   What is going to be the least painful?
+
 # 2017-05-17
 TODO:
 (1) Assemble the irrigation system
