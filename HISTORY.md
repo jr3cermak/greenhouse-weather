@@ -1,3 +1,7 @@
+# 2017-05-20
+Time to look at GreenXbee.ino code.  The goal to recieve a request and
+ask for data via I2C and pass back to the HomeXBee.ino code.
+
 # 2017-05-19
 We are going with a polling situation where the BBBW in the house will poll for
 data and status in the greenhouse.  We can either get to it via I2C/XBee or
@@ -24,9 +28,19 @@ Greenhouse side:
 
 TODO:
 * Hookup Taylor wind sensor
+* Need voltage divider circuit to sense 12V battery (main power)
 * Verify code for wind sensors
 * Order
   * Particle Relay Board
+
+Use Arduino QueueList library to extend ease of I2C communication by
+queuing commands and responses.
+
+A basic program for HomeXBee.ino is working.  A python program based on the
+library mraa to talk to the Arduino over I2C works.  It isn't the best as
+it lacks a lot of the Arduino features.  We are going to rely on reading
+bytes from the Arduino.  Need to filter responses from missing data (char=0),
+no data available(char=255) and the good data.
 
 # 2017-05-18
 Whoa that was painful.  Getting a Beagle Bone Black Wireless I2C to talk to
