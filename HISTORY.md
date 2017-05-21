@@ -1,5 +1,36 @@
 # 2017-05-21
+Created some program stubs.
+
+Setup GreenMcp.ino
+* Setup timer to poll GreenXBee over I2C for pending work
+  * May want to setup a digital pin to set HIGH when there is work to be done?
+
+Setup GreenSNet.ino
+* Setup I2C interface and sensors
+
 Setup GreenXBee.ino sketch (clone from HomeXBee.ino)
+* Code will begin to diverge here as we customize behavior
+
+HomeXBee
+  Serial/I2C(mcp.py) -> cmdQ
+    Remote command: XBee -> GreenXBee -> cmdQ
+    Local  command: dataQ
+  dataQ -> I2C(mcp.py)
+
+GreenXBee
+  Serial/XBee -> cmdQ
+  cmdQ -> GreenMcp/I2C
+  I2C -> dataQ
+  dataQ -> XBee
+
+GreenMcp
+  cmdQ -> I2C
+    Perform tasks, return data to dataQ
+  dataQ -> I2C/GreenXBee
+
+GreenSNet
+  Sensors and data collection
+  I2C slave
 
 # 2017-05-20
 Our first command from HomeXBee.ino made it to the greenhouse XBee.  Now

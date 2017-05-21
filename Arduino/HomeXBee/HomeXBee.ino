@@ -31,7 +31,7 @@
   pins with the D prefix.
 
   Program notes:
-  We can turn off Serial console debugging.
+  We can turn off Serial console when finished debugging.
   The main communication will be over I2C from a master.
   The main goal is to recieve commands from the master, ask for
   data over XBee and return it to the master.
@@ -80,6 +80,7 @@ String cmdBuffer = "";
 
 // Debugging options
 
+// Memory use comparisons
 // 2018-05-19
 // All defines enabled: pgm=5044b; glob=501b
 // All debugging off  : pgm=4162b; glob=328b
@@ -183,7 +184,7 @@ void sendRemote(String &msgOut) {
   XBee.write(msgOut.c_str());
 }
 
-// Command processor
+// Command processor: Home
 void processCommand() {
   String cmd = "";
   String rsp = "";
@@ -273,10 +274,11 @@ void loop() {
       case 10: // LF  (^J)(\n)
       case 13: // CR  (^M)(\r)
         // If we have something in the buffer, add it to cmdQ
+        // NOTE: Since this is from the greenhouse, it is actually data!
         if (cmdBuffer.length() > 0) {
-          cmdQ.push(cmdBuffer);
+          dataQ.push(cmdBuffer);
 #if defined(DEBUG_SERIAL)
-          tty->print(F("qCmd="));
+          tty->print(F("qData="));
           tty->println(cmdBuffer);
 #endif
           cmdBuffer = "";

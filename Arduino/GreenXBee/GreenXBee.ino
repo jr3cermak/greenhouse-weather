@@ -30,7 +30,7 @@
   pins with the D prefix.
 
   Program notes:
-  We can turn off Serial console debugging.
+  We can turn off Serial when finished debugging.
   The main communication will be over I2C from a master.
   The main goal is to recieve commands from the master, ask for
   data over XBee and return it to the master.
@@ -45,9 +45,12 @@
   Command Requests (Type: L=Local;R=Remote)
   Command   Type    Description
   -------   ----    -----------
-  wd1       R       Weather Data Block # 1:
-  gp1       R       GPS Data Block     # 1:
+  wd1       R       Weather Data Block # 1: temperature, humidity, temperature
+  gp1       R       GPS Data Block     # 1: latitude, longitude
+  gp2       R       GPS Data Block     # 2: altitude, number of satellites
+  gp3       R       GPS Data Block     # 3: date, time
   ncmd      L       Return number of commands in the queue
+  mem       L       Report free memory using MemoryFree library
 
 *****************************************************************/
 // Particle code compatibility; add a D prefix to digital pins
@@ -78,6 +81,7 @@ String cmdBuffer = "";
 
 // Debugging options
 
+// Memory use comparisons
 // 2018-05-19
 // All defines enabled: pgm=5044b; glob=501b
 // All debugging off  : pgm=4162b; glob=328b
@@ -181,7 +185,7 @@ void sendRemote(String &msgOut) {
   XBee.write(msgOut.c_str());
 }
 
-// Command processor
+// Command processor: Greenhouse
 void processCommand() {
   String cmd = "";
   String rsp = "";
