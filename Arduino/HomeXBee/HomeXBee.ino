@@ -98,10 +98,12 @@ HardwareSerial *tty;
 #endif
 
 // Loop debugging
-// Useful to slow the loop down so the serial output
-// isn't swamped with output
+// Slow down processing a bit so the serial console
+// isn't swamped with output.  Define DEBUG_LOOP_TICK
+// to send a tick to the serial console.
 #define DEBUG_LOOP
 #if defined(DEBUG_LOOP)
+//#define DEBUG_LOOP_TICK
 const int DEBUG_LOOP_DELAY = 1000;
 #endif
 
@@ -231,27 +233,42 @@ void setup() {
 
 // Perpetual loop
 void loop() {
+  // Set an activity flag
+  // If this is set to true, then we ignore the loop delay
+  bool activity = false;
+  // Inbound character from serial or XBee
+  char c = NULL;
+
   // Process commands
   if (cmdQ.count() > 0) {
+    activity = true;
     processCommand();
+  }
+  // Give preference to inbound traffic from XBee
+  if (XBee.available()) {
+    c = XBee.read();
+#if defined(DEBUG_SERIAL)
+    // If data comes in from XBee, copy to serial monitor
+    tty->write(c);
+#endif
   }
 #if defined(DEBUG_SERIAL)
   // Debugging via serial
-  if (tty->available())
-  { // If data comes in from serial monitor, send it out to XBee
-    XBee.write(tty->read());
-  }
-  if (XBee.available())
-  { // If data comes in from XBee, send it out to serial monitor
-    tty->write(XBee.read());
+  if (c == NULL && tty->available()) {
+    activity = true;
+    // If data comes in from serial monitor, use it as part of the inbound command
+    c = tty->read();
   }
 #endif
 
 #if defined(DEBUG_LOOP)
-  delay(DEBUG_LOOP_DELAY);
+  // If there was no activity, rest for a short bit
+  if (activity == false) {
+    delay(DEBUG_LOOP_DELAY);
+  }
 #endif
-#if defined(DEBUG_LOOP) && defined(DEBUG_SERIAL)
-  //tty->println(F("loop() tick"));
+#if defined(DEBUG_LOOP) && defined(DEBUG_SERIAL) && defined(DEBUG_LOOP_TICK)
+  tty->println(F("loop() tick"));
 #endif
 }
 
