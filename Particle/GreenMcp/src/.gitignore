@@ -1,0 +1,6 @@
+# Handy build script
+mkbin
+# Ignore logging files
+*.txt
+# Ignore firmware files
+*.bin

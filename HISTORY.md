@@ -1,4 +1,10 @@
 # 2017-05-21
+Next:
+* GreenMcp
+  * I2C poll GreenXBee for pending commands
+  * Allow us to put the electron into serial mode so we can easily update it via particle-cli
+    * Build; signal and particle --serial flash program.bin
+
 Created some program stubs.
 
 Setup GreenMcp.ino
