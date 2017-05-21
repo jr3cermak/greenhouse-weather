@@ -75,6 +75,9 @@ const byte I2C_SLAVE_ADDR = 0x30;
 QueueList <String> cmdQ;
 QueueList <String> dataQ;
 
+// Define an inbound command buffer
+String cmdBuffer = "";
+
 // Debugging options
 
 // 2018-05-19
@@ -231,36 +234,62 @@ void setup() {
 #endif
 }
 
-// Perpetual loop
+// Main program loop
 void loop() {
   // Set an activity flag
   // If this is set to true, then we ignore the loop delay
   bool activity = false;
   // Inbound character from serial or XBee
-  char c = NULL;
+  char c = 0;
 
   // Process commands
   if (cmdQ.count() > 0) {
     activity = true;
     processCommand();
   }
-  // Give preference to inbound traffic from XBee
+
+  // Read from XBee
   if (XBee.available()) {
-    activity = true;
     c = XBee.read();
-#if defined(DEBUG_SERIAL)
-    // If data comes in from XBee, copy to serial monitor
-    tty->write(c);
-#endif
   }
 #if defined(DEBUG_SERIAL)
-  // Debugging via serial
-  if (c == NULL && tty->available()) {
-    activity = true;
-    // If data comes in from serial monitor, use it as part of the inbound command
+  // Read from serial
+  if (c == 0 && tty->available()) {
+    // Treat serial input as XBee input
     c = tty->read();
   }
 #endif
+
+  // Process inbound characters
+  if (c != 0) {
+    activity = true;
+#if defined(DEBUG_SERIAL)
+    // If we see a character, send to serial console
+    if (c != 24) {
+      tty->write(c);
+    }
+#endif
+    switch (c) {
+      case 10: // LF  (^J)(\n)
+      case 13: // CR  (^M)(\r)
+        // If we have something in the buffer, add it to cmdQ
+        if (cmdBuffer.length() > 0) {
+          cmdQ.push(cmdBuffer);
+#if defined(DEBUG_SERIAL)
+          tty->print(F("qCmd="));
+          tty->println(cmdBuffer);
+#endif
+          cmdBuffer = "";
+        }
+        break;
+      case 24: // CAN (^X)
+        cmdBuffer = "";
+        break;
+      default:
+        cmdBuffer.concat(c);
+        break;
+    }
+  }
 
 #if defined(DEBUG_LOOP)
   // If there was no activity, rest for a short bit
