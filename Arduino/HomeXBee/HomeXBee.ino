@@ -1,6 +1,7 @@
 /*****************************************************************
-  HomeXBee.ino
-  This is our wireless communication to the greenhouse.
+  HomeXBee.ino (0.1.1)
+  Wireless communication to the greenhouse from home base
+  devices.
 
   XBee Setup:
   The XBees need to be setup to communicate with each other by
@@ -42,6 +43,14 @@
   0x30              Arduino RedBoard/XBee
   0x31              Particle Photon
   0x32              Particle Electron (FUTURE)
+
+  Command Requests (Type: L=Local;R=Remote)
+  Command   Type    Description
+  -------   ----    -----------
+  wd1       R       Weather Data Block # 1:
+  gp1       R       GPS Data Block     # 1:
+  ncmd      L       Return number of commands in the queue
+
 *****************************************************************/
 // Particle code compatibility; add a D prefix to digital pins
 const byte D2 = 2;
@@ -68,12 +77,18 @@ QueueList <String> dataQ;
 
 // Debugging options
 
-// Enable debugging via the serial interface
-// 1=true; 0=false
 // 2018-05-19
-// Serial defined: pgm=5044b; glob=501b
-// Serial undef  : pgm=4162b; glob=328b
+// All defines enabled: pgm=5044b; glob=501b
+// All debugging off  : pgm=4162b; glob=328b
+
+// Enable debugging via the serial interface.  The
+// interface is abstracted so we can switch between
+// Serial, Serial1, SoftSerial, etc.  See setup()
+// REF: http://stackoverflow.com/questions/11865077/arduino-serial-object-data-type-to-create-a-variable-holding-a-reference-to-a-p
 #define DEBUG_SERIAL
+#if defined(DEBUG_SERIAL)
+HardwareSerial *tty;
+#endif
 
 // Enable debugging memory size
 // 2018-05-19
@@ -111,8 +126,8 @@ void readDataFromMaster(int numBytes) {
       if (inCmd.length() > 0) {
         cmdQ.push(inCmd);
 #if defined(DEBUG_SERIAL)
-        Serial.print(F("qCmd="));
-        Serial.println(inCmd);
+        tty->print(F("qCmd="));
+        tty->println(inCmd);
 #endif
         inCmd = "";
       }
@@ -125,35 +140,71 @@ void readDataFromMaster(int numBytes) {
     }
   }
 #if defined(DEBUG_SERIAL)
-  Serial.print(F("#cmdQ="));
-  Serial.println(cmdQ.count());
+  tty->print(F("#cmdQ="));
+  tty->println(cmdQ.count());
 #endif
 #if defined(DEBUG_SERIAL) && defined(DEBUG_MEMFREE)
-  Serial.print(F("mem="));
-  Serial.println(freeMemory());
+  tty->print(F("mem="));
+  tty->println(freeMemory());
 #endif
 }
 
 // A I2C Master has requested data.
-// If there is no data in the queue (dataQ), return
-// an error code (not ready to send; -1).
+// If there is data to send, send the next message from dataQ,
+// otherwise send "EOL\n".
 void sendDataToMaster() {
-#if defined(DEBUG_SERIAL)
-  Serial.print(F("RTS #dataQ="));
-  Serial.println(dataQ.count());
-#endif
-  // If there is nothing in the queue, return not ready to send = -1 (unsigned 255)
-  if (dataQ.count() == 0) {
-    Wire.write(-1);
-  } else {
-    char msg[32];
-    String rsp = "";
+  // Send next dataQ message, otherwise "EOL"
+  // This is how to initialize the char array with zero's
+  char msg[32] = { 0 };
+  String rsp = "EOL\n";
+  if (dataQ.count() > 0) {
     rsp = dataQ.pop();
-    rsp.toCharArray(msg,rsp.length()+1);
-    Wire.write(msg,rsp.length());
+  }
+
+  rsp.toCharArray(msg, rsp.length() + 1);
+#if defined(DEBUG_SERIAL)
+  tty->print(F("RTS #dataQ="));
+  tty->println(dataQ.count());
+  //tty->print(F("MSG["));
+  //tty->print(msg);
+  //tty->println(F("]"));
+#endif
+  // We will always send 32 bytes
+  Wire.write(msg, 32);
+}
+
+// This sends messages out the XBee
+void sendRemote(String &msgOut) {
+  XBee.write(msgOut.c_str());
+}
+
+// Command processor
+void processCommand() {
+  String cmd = "";
+  String rsp = "";
+  cmd = cmdQ.pop();
+  if (cmd == "ncmd") {
+    rsp = "#cmdQ:" + String(cmdQ.count());
+
+  } else if (cmd == "mem") {
+#if defined(DEBUG_MEMFREE)
+    rsp = "#mem:" + String(freeMemory());
+#endif    
+  } else if (cmd == "wd1") {
+    sendRemote(cmd);
+  }
+  if (rsp.length() > 0) {
+    dataQ.push(rsp + "\n");
+#if defined(DEBUG_SERIAL)
+    tty->print(F("Process cmd:"));
+    tty->print(cmd);
+    tty->print(F(" Resp:"));
+    tty->println(rsp);
+#endif
   }
 }
 
+// Initialization
 void setup() {
   // Initialize communication with the XBee
   XBee.begin(XBEE_BAUD);
@@ -167,32 +218,15 @@ void setup() {
   Wire.onRequest(sendDataToMaster);
 
 #if defined(DEBUG_SERIAL)
+  // Change this to the appropriate serial device for debugging
+  tty = &Serial;
   // Debugging via serial (compact the code if we don't need it)
-  Serial.begin(SERIAL_BAUD);
+  tty->begin(SERIAL_BAUD);
   // Wait for serial port to connect
-  while (!Serial) {
+  while (!tty) {
   }
-  Serial.println(F("Serial setup() complete."));
+  tty->println(F("Serial setup() complete."));
 #endif
-}
-
-// Command processor
-void processCommand() {
-  String cmd = "";
-  String rsp = "";
-  cmd = cmdQ.pop();
-  if (cmd == "ncmd") {
-    rsp = "#cmdQ:" + String(cmdQ.count());
-  }
-  if (rsp.length() > 0) {
-    dataQ.push(rsp + "\n");
-#if defined(DEBUG_SERIAL)
-    Serial.print(F("Process cmd:"));
-    Serial.print(cmd);
-    Serial.print(F(" Resp:"));
-    Serial.println(rsp);
-#endif      
-  }
 }
 
 // Perpetual loop
@@ -201,16 +235,15 @@ void loop() {
   if (cmdQ.count() > 0) {
     processCommand();
   }
-
 #if defined(DEBUG_SERIAL)
   // Debugging via serial
-  if (Serial.available())
+  if (tty->available())
   { // If data comes in from serial monitor, send it out to XBee
-    XBee.write(Serial.read());
+    XBee.write(tty->read());
   }
   if (XBee.available())
   { // If data comes in from XBee, send it out to serial monitor
-    Serial.write(XBee.read());
+    tty->write(XBee.read());
   }
 #endif
 
@@ -218,7 +251,7 @@ void loop() {
   delay(DEBUG_LOOP_DELAY);
 #endif
 #if defined(DEBUG_LOOP) && defined(DEBUG_SERIAL)
-  //Serial.println(F("loop() tick"));
+  //tty->println(F("loop() tick"));
 #endif
 }
 
