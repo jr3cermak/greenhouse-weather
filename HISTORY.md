@@ -1,15 +1,18 @@
-# 2017-05-20
-Our first command from HomeXbee.ino made it to the greenhouse XBee.  Now
-to get GreenXbee.ino started to respond.
+# 2017-05-21
+Setup GreenXBee.ino sketch (clone from HomeXBee.ino)
 
-Refactored HomeXbee.ino so the serial device can be easily changed without
+# 2017-05-20
+Our first command from HomeXBee.ino made it to the greenhouse XBee.  Now
+to get GreenXBee.ino started to respond.
+
+Refactored HomeXBee.ino so the serial device can be easily changed without
 changing a lot of code.  The python mraa library is a pain.  We are just
 going to pass 32 bytes.  We can't read char by char as the readByte() 
 function will just read a byte and trash the rest of the message.  We
 might consider refactoring back to the python module smbus.   There is
 a smbus2 library.  Will clean up the python code and post that soon.
 
-Time to look at GreenXbee.ino code.  The goal to recieve a request and
+Time to look at GreenXBee.ino code.  The goal to recieve a request and
 ask for data via I2C and pass back to the HomeXBee.ino code.
 
 # 2017-05-19
@@ -34,7 +37,7 @@ House side:
 Greenhouse side:
 * Particle Electron: GreenMcp.ino
 * Arduino Mega 2560: GreenSNet.ino
-* Arduino SparkFun RedBoard: GreenXbee.ino
+* Arduino SparkFun RedBoard: GreenXBee.ino
 
 TODO:
 * Hookup Taylor wind sensor
