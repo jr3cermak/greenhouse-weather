@@ -247,6 +247,7 @@ void loop() {
   }
   // Give preference to inbound traffic from XBee
   if (XBee.available()) {
+    activity = true;
     c = XBee.read();
 #if defined(DEBUG_SERIAL)
     // If data comes in from XBee, copy to serial monitor
