@@ -1,4 +1,11 @@
 # 2017-05-21
+
+Next:
+* GreenMcp
+  * Respond to command and send data back
+
+Successfully passed a message from mcp.py to GreenMcp.ino.
+
 Next:
 * GreenMcp
   * I2C poll GreenXBee for pending commands

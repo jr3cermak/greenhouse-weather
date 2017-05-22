@@ -4,3 +4,5 @@ mkbin
 *.txt
 # Ignore firmware files
 *.bin
+# Ignore vim swap
+*.swp

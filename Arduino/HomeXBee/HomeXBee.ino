@@ -182,6 +182,12 @@ void sendDataToMaster() {
 // This sends messages out the XBee
 void sendRemote(String &msgOut) {
   XBee.write(msgOut.c_str());
+  XBee.write('\n');
+#if defined(DEBUG_SERIAL)
+  tty->print(F("XBee>["));
+  tty->print(msgOut);
+  tty->println("]");
+#endif
 }
 
 // Command processor: Home

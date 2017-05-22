@@ -119,31 +119,32 @@ const int DEBUG_LOOP_DELAY = 1000;
 // Normally, this should be a single command to request data.
 // We should always return a byte to the master that is the
 // size of the queue or an error code.
+// NOTE: This should all be data heading back out to the XBee
 void readDataFromMaster(int numBytes) {
   int n = numBytes;
   n++;
   // Read the command from Master
-  String inCmd = "";
+  String strBuf = "";
   while (Wire.available()) {
     char c = Wire.read();
     // Dump CR and LF, this indicates the end of line
     if (c == 10 || c == 13) {
-      // If the command is not empty, add it to the queue
-      // and clear the variable
-      if (inCmd.length() > 0) {
-        cmdQ.push(inCmd);
+      // If the response is not empty, add to dataQ
+      // and clear the string buffer
+      if (strBuf.length() > 0) {
+        dataQ.push(strBuf);
 #if defined(DEBUG_SERIAL)
-        tty->print(F("qCmd="));
-        tty->println(inCmd);
+        tty->print(F("qData="));
+        tty->println(strBuf);
 #endif
-        inCmd = "";
+        strBuf = "";
       }
     } else if (c == 24) {
       // Clear current command in the buffer
       // ASCII 24b = CAN (^X)
-      inCmd = "";
+      strBuf = "";
     } else {
-      inCmd.concat(c);
+      strBuf.concat(c);
     }
   }
 #if defined(DEBUG_SERIAL)
@@ -157,24 +158,25 @@ void readDataFromMaster(int numBytes) {
 }
 
 // A I2C Master has requested data.
-// If there is data to send, send the next message from dataQ,
+// If there is a command to forward, send it from cmdQ,
 // otherwise send "EOL\n".
 void sendDataToMaster() {
   // Send next dataQ message, otherwise "EOL"
   // This is how to initialize the char array with zero's
   char msg[32] = { 0 };
   String rsp = "EOL\n";
-  if (dataQ.count() > 0) {
-    rsp = dataQ.pop();
+  if (cmdQ.count() > 0) {
+    rsp = cmdQ.pop() + "\n";
   }
 
   rsp.toCharArray(msg, rsp.length() + 1);
 #if defined(DEBUG_SERIAL)
-  tty->print(F("RTS #dataQ="));
-  tty->println(dataQ.count());
-  //tty->print(F("MSG["));
-  //tty->print(msg);
-  //tty->println(F("]"));
+  tty->print(F("RTS #cmdQ="));
+  tty->println(cmdQ.count());
+
+  tty->print(F("MSG["));
+  tty->print(msg);
+  tty->println(F("]"));
 #endif
   // We will always send 32 bytes
   Wire.write(msg, 32);
@@ -182,31 +184,37 @@ void sendDataToMaster() {
 
 // This sends messages out the XBee
 void sendRemote(String &msgOut) {
-  XBee.write(msgOut.c_str());
+  XBee.write(msgOut.c_str() + '\n');
 }
 
 // Command processor: Greenhouse
+// XBee Serial -> cmdQ
+// cmdQ -> I2C
+// I2C:
+//   All return data -> XBee Serial
 void processCommand() {
   String cmd = "";
   String rsp = "";
   cmd = cmdQ.pop();
   if (cmd == "ncmd") {
     rsp = "#cmdQ:" + String(cmdQ.count());
-
   } else if (cmd == "mem") {
 #if defined(DEBUG_MEMFREE)
     rsp = "#mem:" + String(freeMemory());
 #endif    
   } else if (cmd == "wd1") {
-    sendRemote(cmd);
+    rsp = cmd;
   }
   if (rsp.length() > 0) {
-    dataQ.push(rsp + "\n");
+    dataQ.push(rsp);
 #if defined(DEBUG_SERIAL)
+
     tty->print(F("Process cmd:"));
     tty->print(cmd);
     tty->print(F(" Resp:"));
-    tty->println(rsp);
+    tty->print(rsp);
+    tty->print(F(" #dataQ="));
+    tty->println(dataQ.count());
 #endif
   }
 }
@@ -245,17 +253,18 @@ void loop() {
   char c = 0;
 
   // Process commands
-  if (cmdQ.count() > 0) {
-    activity = true;
-    processCommand();
-  }
+  // We don't process commands here
+  //if (cmdQ.count() > 0) {
+  //  activity = true;
+  //  processCommand();
+  //}
 
   // Read from XBee
   if (XBee.available()) {
     c = XBee.read();
   }
 #if defined(DEBUG_SERIAL)
-  // Read from serial
+  // Read from serial and we didn't read anything from the XBee
   if (c == 0 && tty->available()) {
     // Treat serial input as XBee input
     c = tty->read();
@@ -291,6 +300,14 @@ void loop() {
         cmdBuffer.concat(c);
         break;
     }
+  }
+
+  // If we don't have any activity, check out dataQ
+  // If there is data, send a line back.
+  if (activity == false && dataQ.count() > 0) {
+    String dataMsg = "";
+    dataMsg = dataQ.pop();
+    sendRemote(dataMsg);
   }
 
 #if defined(DEBUG_LOOP)
