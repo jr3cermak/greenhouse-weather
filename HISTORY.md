@@ -1,3 +1,27 @@
+# 2017-05-22
+
+Next:
+* Make sure we can get data back to the mcp.py
+* Begin rewite of GreenSNet.ino
+* Consider wiring up digital signal wire to allow the mpaa library
+to become a slave although it is always a master.  The goal is to listen
+to a digitalPin.  We are adding a request to send signal to the I2C.
+
+The command now makes it all the way in and obtains data!  Now to make
+sure the data comes back out.
+```
+0000036755 [app] INFO: +cmdQ[1]:[wd1]
+0000036756 [app] INFO: Processing command:wd1
+0000036756 [app] INFO: >GreenSNet:[wd1]
+0000038826 [app] INFO: +dataQ[1]:[$TP=83.5,HH=26.81,HT=83.5#]
+0000038836 [app] INFO: Returning data:$TP=83.5,HH=26.81,HT=83.5#
+0000058836 [app] INFO: +cmdQ[1]:[wd1]
+0000058837 [app] INFO: Processing command:wd1
+0000058837 [app] INFO: >GreenSNet:[wd1]
+0000060907 [app] INFO: +dataQ[1]:[$TP=83.6,HH=26.79,HT=83.4#]
+0000060917 [app] INFO: Returning data:$TP=83.6,HH=26.79,HT=83.4#
+```
+
 # 2017-05-21
 
 Next:
