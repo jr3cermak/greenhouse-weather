@@ -179,6 +179,11 @@ void setup() {
 
 // loop() runs over and over again, as quickly as it can execute.
 void loop() {
+  // Process any queued commands
+  if (cmdQ.count() > 0) {
 
-
+  }
+  // If there is queued data, send that out
+  if (dataQ.count() > 0) {
+  }
 }
