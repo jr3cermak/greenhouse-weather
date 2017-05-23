@@ -1,3 +1,28 @@
+# 2017-05-23
+
+Success.  The HomeXBee and mcp.py can pass data back and forth thanks to 
+the little RTS hack.   We get a partial message back, so there is something
+amiss.  Continue cleanup of I2C communications.  I am wondering if we can
+use register reads to get access to specific pieces of information instead
+of doing a tightly staged response.
+
+Rewrite the communications a bit.  I figured out how to add a RTS signal 
+back to the mcp.py so any data coming back can be fetched by the master 
+without polling the slave to death.
+
+In general, message passing will state the number of characters.   All 
+messages will be two parts.  The message itself may have multiple commands 
+separated by semicolon(;).  Semicolon ASCII = 59
+
+* Part 1: (byte) message size (1-32 chars)
+* Part 2: <message>
+
+There are other problems with this, but let us keep it completely 
+simple for now.
+
+mcp.py is now a threaded program.  One thread is watching for keyboard 
+input.  Will have to implement a daemon mode vs. interactive mode.
+
 # 2017-05-22
 
 Next:

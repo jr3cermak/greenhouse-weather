@@ -1,5 +1,5 @@
 /*****************************************************************
-  HomeXBee.ino (0.1.1)
+  HomeXBee.ino (0.1.2)
   Wireless communication to the greenhouse from home base
   devices.
 
@@ -24,8 +24,10 @@
   the XBee's DOUT and DIN pins to Arduino pins 2 and 3.
 
   PINS:
-  D2 (Arduino's Software RX) -> XBee's DOUT (TX)
-  D3 (Arduino's Software TX) -> XBee's DIN (RX)
+  D2  (Arduino's Software RX) -> XBee's DOUT (TX)
+  D3  (Arduino's Software TX) -> XBee's DIN (RX)
+  D12 (RTS to mcp.py, pull LOW to indicate a message is ready) -> BBBW P8_11(GPIO_45)
+    This is via a signal level shifter so we don't blow out the BBBW pin
 
   Note: For Particle code compatability, we #define digital
   pins with the D prefix.
@@ -41,6 +43,7 @@
   -------           ------
   <master>          BeagleBone Black Wireless
   0x30              Arduino RedBoard/XBee
+    RTS/D12         Default(HIGH)/Pull LOW to indicate data ready for transmission to master
   0x31              Particle Photon
   0x32              Particle Electron (FUTURE)
 
@@ -55,6 +58,7 @@
 // Particle code compatibility; add a D prefix to digital pins
 const byte D2 = 2;
 const byte D3 = 3;
+const byte D12 = 12;
 
 // Define baud rates in which to communicate
 const int SERIAL_BAUD = 9600;
@@ -76,7 +80,12 @@ QueueList <String> cmdQ;
 QueueList <String> dataQ;
 
 // Define an inbound command buffer
-String cmdBuffer = "";
+String msgBuffer = "";
+
+// The python library mraa does not keep communication channels open
+// for I2C, so read requests must be sequenced through the onRequest
+// handler.
+int msgseq = 0;
 
 // Debugging options
 
@@ -108,25 +117,92 @@ HardwareSerial *tty;
 #define DEBUG_LOOP
 #if defined(DEBUG_LOOP)
 //#define DEBUG_LOOP_TICK
-const int DEBUG_LOOP_DELAY = 1000;
+const int DEBUG_LOOP_DELAY = 2000;
 #endif
 
 // Functions
 // Place functions before setup() and loop() to avoid compiler warnings
+
+// We will send data to the master if RTS is LOW and the master
+// sends us byte value of 33.
+// If there is data to send, send the next message from dataQ,
+// otherwise send "EOL\n".
+void sendDataToMaster() {
+  // Send next dataQ message, otherwise "EOL"
+
+  static String rsp = "EOL";
+
+#if defined(DEBUG_SERIAL)
+#endif
+
+  if (msgseq == 1) {
+    if (dataQ.count() > 0) {
+      rsp = dataQ.pop();
+    } else {
+      rsp = "EOL";
+    }
+    Wire.write(rsp.length());
+    msgseq++;
+    return;
+  }
+
+  if (msgseq == 2) {
+    // This is how to initialize the char array with zero's
+    char msg[32] = { 0 };
+    rsp.toCharArray(msg, rsp.length() + 1);
+#if defined(DEBUG_SERIAL)
+    tty->print(F("RTS #dataQ="));
+    tty->println(dataQ.count());
+    tty->print(F("MSG["));
+    tty->print(msg);
+    tty->println(F("]"));
+#endif
+    // Send message
+    Wire.write(msg, rsp.length() + 1);
+    rsp = "EOL";
+    msgseq = 0;
+  }
+
+  // If this queue is now empty, return RTS line to HIGH (no data)
+  if (dataQ.count() == 0) {
+    digitalWrite(D12, HIGH);
+  }
+}
 
 // Read from I2C Master via onReceive callback
 // Normally, this should be a single command to request data.
 // We should always return a byte to the master that is the
 // size of the queue or an error code.
 void readDataFromMaster(int numBytes) {
-  int n = numBytes;
-  n++;
-  // Read the command from Master
+  // Part 1 is one byte long
+  // Part 2 is two more more bytes long
+
+  // Part 1 message is always length 1
+  if (numBytes == 1) {
+    int c = Wire.read();
+#if defined(DEBUG_SERIAL)
+    tty->print(F("pt1="));
+    tty->println(String(c));
+#endif
+    // Special hook, if c == 33 and RTS is LOW, we
+    // actually now send a message back to the master.
+    if (c == 33) {
+      int val = -1;
+      val = digitalRead(D12);
+      if (val == 0) {
+        msgseq = 1;
+      }
+    }
+    return;
+  }
+
+  // Read the command from Master, the actual length is not really
+  // important.
   String inCmd = "";
   while (Wire.available()) {
     char c = Wire.read();
-    // Dump CR and LF, this indicates the end of line
-    if (c == 10 || c == 13) {
+    // If we have multiple commands, separate them by ASCII(59)(;)
+    if (c == 59) {
       // If the command is not empty, add it to the queue
       // and clear the variable
       if (inCmd.length() > 0) {
@@ -145,6 +221,15 @@ void readDataFromMaster(int numBytes) {
       inCmd.concat(c);
     }
   }
+  // If we have a command, add it to the queue
+  if (inCmd.length() > 0) {
+    cmdQ.push(inCmd);
+#if defined(DEBUG_SERIAL)
+    tty->print(F("qCmd="));
+    tty->println(inCmd);
+#endif
+    inCmd = "";
+  }
 #if defined(DEBUG_SERIAL)
   tty->print(F("#cmdQ="));
   tty->println(cmdQ.count());
@@ -153,30 +238,6 @@ void readDataFromMaster(int numBytes) {
   tty->print(F("mem="));
   tty->println(freeMemory());
 #endif
-}
-
-// A I2C Master has requested data.
-// If there is data to send, send the next message from dataQ,
-// otherwise send "EOL\n".
-void sendDataToMaster() {
-  // Send next dataQ message, otherwise "EOL"
-  // This is how to initialize the char array with zero's
-  char msg[32] = { 0 };
-  String rsp = "EOL\n";
-  if (dataQ.count() > 0) {
-    rsp = dataQ.pop();
-  }
-
-  rsp.toCharArray(msg, rsp.length() + 1);
-#if defined(DEBUG_SERIAL)
-  tty->print(F("RTS #dataQ="));
-  tty->println(dataQ.count());
-  //tty->print(F("MSG["));
-  //tty->print(msg);
-  //tty->println(F("]"));
-#endif
-  // We will always send 32 bytes
-  Wire.write(msg, 32);
 }
 
 // This sends messages out the XBee
@@ -196,17 +257,17 @@ void processCommand() {
   String rsp = "";
   cmd = cmdQ.pop();
   if (cmd == "ncmd") {
-    rsp = "#cmdQ:" + String(cmdQ.count());
+    rsp = "$cmdQ:" + String(cmdQ.count());
 
   } else if (cmd == "mem") {
 #if defined(DEBUG_MEMFREE)
-    rsp = "#mem:" + String(freeMemory());
-#endif    
+    rsp = "$mem:" + String(freeMemory());
+#endif
   } else if (cmd == "wd1") {
     sendRemote(cmd);
   }
   if (rsp.length() > 0) {
-    dataQ.push(rsp + "\n");
+    dataQ.push(rsp);
 #if defined(DEBUG_SERIAL)
     tty->print(F("Process cmd:"));
     tty->print(cmd);
@@ -229,6 +290,11 @@ void setup() {
   // Master has requested data
   Wire.onRequest(sendDataToMaster);
 
+  // Define a RTS line to mcp.py
+  pinMode(D12, OUTPUT);
+  digitalWrite(D12, HIGH);  // Default signal is HIGH; when a message is ready pull LOW
+
+  // This should always be at the end of setup()
 #if defined(DEBUG_SERIAL)
   // Change this to the appropriate serial device for debugging
   tty = &Serial;
@@ -279,23 +345,50 @@ void loop() {
     switch (c) {
       case 10: // LF  (^J)(\n)
       case 13: // CR  (^M)(\r)
-        // If we have something in the buffer, add it to cmdQ
-        // NOTE: Since this is from the greenhouse, it is actually data!
-        if (cmdBuffer.length() > 0) {
-          dataQ.push(cmdBuffer);
+        // Parse the message if we see CR and/or LF
+        // Messages that start with "$" are data, the rest are commands.
+        // Place in appropriate queue
+        if (msgBuffer.length() > 0) {
+          if (msgBuffer.charAt(0) == "$") {
+            dataQ.push(msgBuffer);
 #if defined(DEBUG_SERIAL)
-          tty->print(F("qData="));
-          tty->println(cmdBuffer);
+            tty->print(F("qData="));
+            tty->println(msgBuffer);
 #endif
-          cmdBuffer = "";
+          } else {
+            cmdQ.push(msgBuffer);
+#if defined(DEBUG_SERIAL)
+            tty->print(F("qCmd="));
+            tty->println(msgBuffer);
+#endif
+          }
+          msgBuffer = "";
         }
         break;
       case 24: // CAN (^X)
-        cmdBuffer = "";
+        msgBuffer = "";
         break;
       default:
-        cmdBuffer.concat(c);
+        msgBuffer.concat(c);
         break;
+    }
+  }
+
+  // If we have data in the queue and RTS is HIGH, then lets
+  // set it LOW to inform the master to come collect it.
+  // 1=HIGH 0=LOW
+  if (activity == false && dataQ.count() > 0) {
+    int val = 0;
+    val = digitalRead(D12);
+#if defined(DEBUG_SERIAL)
+    tty->print(F("dataQ="));
+    tty->print(dataQ.count());
+    tty->print(F(" D12State("));
+    tty->print(val);
+    tty->println(F(")"));
+#endif
+    if (val == HIGH) {
+      digitalWrite(D12, LOW);
     }
   }
 

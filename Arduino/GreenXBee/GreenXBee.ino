@@ -1,5 +1,5 @@
 /*****************************************************************
-  GreenXBee.ino (0.1.1)
+  GreenXBee.ino (0.1.2)
   Wireless communication from the greenhouse.
 
   XBee Setup:
@@ -185,6 +185,10 @@ void sendDataToMaster() {
 // This sends messages out the XBee
 void sendRemote(String &msgOut) {
   XBee.write(msgOut.c_str() + '\n');
+#if defined(DEBUG_SERIAL)
+  tty->print(F("XBee>"));
+  tty->println(msgOut);
+#endif
 }
 
 // Command processor: Greenhouse
@@ -201,14 +205,13 @@ void processCommand() {
   } else if (cmd == "mem") {
 #if defined(DEBUG_MEMFREE)
     rsp = "#mem:" + String(freeMemory());
-#endif    
+#endif
   } else if (cmd == "wd1") {
     rsp = cmd;
   }
   if (rsp.length() > 0) {
     dataQ.push(rsp);
 #if defined(DEBUG_SERIAL)
-
     tty->print(F("Process cmd:"));
     tty->print(cmd);
     tty->print(F(" Resp:"));

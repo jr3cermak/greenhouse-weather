@@ -266,14 +266,18 @@ void processCommand() {
   }
 }
 
-// This routine sends data back to home base
+// This routine sends data back to home base.
+// There is no return response expected.
 void sendData() {
   String msg = "";
   msg = dataQ.pop();
-
 #if defined(DEBUG_LOG)
-  Log.info("Returning data:%s", CCHAR msg);
+  Log.info(">GreenXBee:%s", CCHAR msg);
 #endif
+  i2c->beginTransmission(I2CADDR_XBEE);
+  msg.concat("\n");
+  i2c->write(msg);
+  i2c->endTransmission();
 }
 
 // loop() runs over and over again, as quickly as it can execute.
