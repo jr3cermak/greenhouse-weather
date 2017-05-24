@@ -1,5 +1,5 @@
 /*****************************************************************
-  HomeXBee.ino (0.1.2)
+  HomeXBee.ino (0.1.3)
   Wireless communication to the greenhouse from home base
   devices.
 
@@ -82,10 +82,29 @@ QueueList <String> dataQ;
 // Define an inbound command buffer
 String msgBuffer = "";
 
-// The python library mraa does not keep communication channels open
-// for I2C, so read requests must be sequenced through the onRequest
-// handler.
-int msgseq = 0;
+// We are now using the readBytesReg() and write()
+// functions of libmraa.   We need to keep track of
+// a few things.
+// Last register requested
+byte lastReg = 0;
+// Current message
+String outputMsg = "";
+// Input queue select
+byte inputQueue = 1;
+// Output queue select
+byte outputQueue = 2;
+// Message sequence
+byte msgSeq = 1;
+
+// Define register constants
+const byte NMSG_INPUT = 1;
+const byte NMSG_OUTPUT = 2;
+const byte QSEL_INPUT = 3;
+const byte QSEL_OUTPUT = 4;
+const byte GET_NEXT_MSG = 5;
+const byte GET_MSG_SIZE = 6;
+const byte FETCH_MSG = 7;
+const byte GET_MSG_SEQ = 8;
 
 // Debugging options
 
@@ -123,44 +142,68 @@ const int DEBUG_LOOP_DELAY = 2000;
 // Functions
 // Place functions before setup() and loop() to avoid compiler warnings
 
-// We will send data to the master if RTS is LOW and the master
-// sends us byte value of 33.
-// If there is data to send, send the next message from dataQ,
-// otherwise send "EOL\n".
+// We will send data to the master based on
+// lastReg sent by readBytesReg().
 void sendDataToMaster() {
-  // Send next dataQ message, otherwise "EOL"
-
-  static String rsp = "EOL";
-
-#if defined(DEBUG_SERIAL)
-#endif
-
-  if (msgseq == 1) {
-    if (dataQ.count() > 0) {
-      rsp = dataQ.pop();
-    } else {
-      rsp = "EOL";
-    }
-    Wire.write(rsp.length());
-    msgseq++;
-    return;
-  }
-
-  if (msgseq == 2) {
-    // This is how to initialize the char array with zero's
-    char msg[32] = { 0 };
-    rsp.toCharArray(msg, rsp.length() + 1);
-#if defined(DEBUG_SERIAL)
-    tty->print(F("RTS #dataQ="));
-    tty->println(dataQ.count());
-    tty->print(F("MSG["));
-    tty->print(msg);
-    tty->println(F("]"));
-#endif
-    // Send message
-    Wire.write(msg, rsp.length() + 1);
-    rsp = "EOL";
-    msgseq = 0;
+  switch (lastReg) {
+    case NMSG_INPUT:
+      switch (inputQueue) {
+        case 1: // cmdQ
+          Wire.write(cmdQ.count());
+          break;
+        case 2: // dataQ
+          Wire.write(dataQ.count());
+          break;
+      }    
+      break;
+    case NMSG_OUTPUT:
+      switch (outputQueue) {
+        case 1: // cmdQ
+          Wire.write(cmdQ.count());
+          break;
+        case 2: // dataQ
+          Wire.write(dataQ.count());
+          break;
+      }
+      break;
+    case QSEL_INPUT:
+      Wire.write(inputQueue);
+      break;
+    case QSEL_OUTPUT:
+      Wire.write(outputQueue);
+      break;
+    case GET_NEXT_MSG:
+      outputMsg = "";
+      switch (outputQueue) {
+        case 1: // cmdQ
+          if (cmdQ.count() > 0) {
+            outputMsg = cmdQ.pop();
+          }
+          break;
+        case 2: // dataQ
+          if (dataQ.count() > 0) {
+            outputMsg = dataQ.pop();
+          }
+          break;
+      }
+      if (outputMsg.length() > 0) {
+        Wire.write(1);
+      } else {
+        Wire.write(2);
+      }
+      msgSeq = 2;
+      break;
+    case GET_MSG_SIZE:
+      Wire.write(outputMsg.length());
+      msgSeq = 3;
+      break;
+    case FETCH_MSG:
+      Wire.write(outputMsg.c_str());
+      msgSeq = 1;
+      break;
+    case GET_MSG_SEQ:
+      Wire.write(msgSeq);
+      break;
   }
 
   // If this queue is now empty, return RTS line to HIGH (no data)
@@ -170,72 +213,80 @@ void sendDataToMaster() {
 }
 
 // Read from I2C Master via onReceive callback
-// Normally, this should be a single command to request data.
-// We should always return a byte to the master that is the
-// size of the queue or an error code.
+// This will be a one character REGISTER
+// If >=2; this will be string input
 void readDataFromMaster(int numBytes) {
-  // Part 1 is one byte long
-  // Part 2 is two more more bytes long
-
-  // Part 1 message is always length 1
+  // If message is one in length, then we treat this
+  // as a register request.
   if (numBytes == 1) {
-    int c = Wire.read();
+    lastReg = Wire.read();
 #if defined(DEBUG_SERIAL)
-    tty->print(F("pt1="));
-    tty->println(String(c));
+    tty->print(F("REG="));
+    tty->println(String(lastReg));
 #endif
-    // Special hook, if c == 33 and RTS is LOW, we
-    // actually now send a message back to the master.
-    if (c == 33) {
-      int val = -1;
-      val = digitalRead(D12);
-      if (val == 0) {
-        msgseq = 1;
+  } else if (numBytes > 1) {
+    // Read inbound message from Master, the actual length is not really
+    // important.
+    String inMsg = "";
+    while (Wire.available()) {
+      char c = Wire.read();
+      // If we have multiple commands, separate them by ASCII(59)(;)
+      if (c == 59) {
+        // If the message is not empty, add it to the queue
+        // and clear the variable
+        if (inMsg.length() > 0) {
+          switch (inputQueue) {
+            case 1: // cmdQ
+              cmdQ.push(inMsg);
+              break;
+            case 2: // dataQ
+              dataQ.push(inMsg);
+          }
+#if defined(DEBUG_SERIAL)
+          tty->print(F("+q="));
+          tty->print(inputQueue);
+          tty->print(F(":["));
+          tty->print(inMsg);
+          tty->println(F("]"));
+#endif
+          inMsg = "";
+        }
+      } else if (c == 24) {
+        // Clear current command in the buffer
+        // ASCII 24b = CAN (^X)
+        inMsg = "";
+      } else {
+        inMsg.concat(c);
       }
     }
-    return;
-  }
-
-  // Read the command from Master, the actual length is not really
-  // important.
-  String inCmd = "";
-  while (Wire.available()) {
-    char c = Wire.read();
-    // If we have multiple commands, separate them by ASCII(59)(;)
-    if (c == 59) {
-      // If the command is not empty, add it to the queue
-      // and clear the variable
-      if (inCmd.length() > 0) {
-        cmdQ.push(inCmd);
-#if defined(DEBUG_SERIAL)
-        tty->print(F("qCmd="));
-        tty->println(inCmd);
-#endif
-        inCmd = "";
+    // If the message is not empty, add it to the queue
+    // and clear the variable
+    if (inMsg.length() > 0) {
+      switch (inputQueue) {
+        case 1: // cmdQ
+          cmdQ.push(inMsg);
+          break;
+        case 2: // dataQ
+          dataQ.push(inMsg);
       }
-    } else if (c == 24) {
-      // Clear current command in the buffer
-      // ASCII 24b = CAN (^X)
-      inCmd = "";
-    } else {
-      inCmd.concat(c);
+#if defined(DEBUG_SERIAL)
+      tty->print(F("$+q="));
+      tty->print(inputQueue);
+      tty->print(F(":["));
+      tty->print(inMsg);
+      tty->println(F("]"));
+#endif
+      inMsg = "";
     }
   }
-  // If we have a command, add it to the queue
-  if (inCmd.length() > 0) {
-    cmdQ.push(inCmd);
 #if defined(DEBUG_SERIAL)
-    tty->print(F("qCmd="));
-    tty->println(inCmd);
-#endif
-    inCmd = "";
-  }
-#if defined(DEBUG_SERIAL)
-  tty->print(F("#cmdQ="));
+  tty->print(F("$dataQ="));
+  tty->println(dataQ.count());
+  tty->print(F(" $cmdQ="));
   tty->println(cmdQ.count());
 #endif
 #if defined(DEBUG_SERIAL) && defined(DEBUG_MEMFREE)
-  tty->print(F("mem="));
+  tty->print(F("$mem="));
   tty->println(freeMemory());
 #endif
 }
@@ -315,20 +366,13 @@ void loop() {
   // Inbound character from serial or XBee
   char c = 0;
 
-  // Process commands
-  if (cmdQ.count() > 0) {
-    activity = true;
-    processCommand();
-  }
-
   // Read from XBee
-  if (XBee.available()) {
+  if (c == 0 && XBee.available()) {
     c = XBee.read();
   }
 #if defined(DEBUG_SERIAL)
   // Read from serial
   if (c == 0 && tty->available()) {
-    // Treat serial input as XBee input
     c = tty->read();
   }
 #endif
@@ -346,10 +390,10 @@ void loop() {
       case 10: // LF  (^J)(\n)
       case 13: // CR  (^M)(\r)
         // Parse the message if we see CR and/or LF
-        // Messages that start with "$" are data, the rest are commands.
+        // Messages that start with '$' are data, the rest are commands.
         // Place in appropriate queue
         if (msgBuffer.length() > 0) {
-          if (msgBuffer.charAt(0) == "$") {
+          if (msgBuffer.charAt(0) == '$') {
             dataQ.push(msgBuffer);
 #if defined(DEBUG_SERIAL)
             tty->print(F("qData="));
@@ -372,6 +416,12 @@ void loop() {
         msgBuffer.concat(c);
         break;
     }
+  }
+
+  // Process commands
+  if (activity == false && cmdQ.count() > 0) {
+    activity = true;
+    processCommand();
   }
 
   // If we have data in the queue and RTS is HIGH, then lets

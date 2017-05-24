@@ -22,6 +22,72 @@
 # 0x31              Particle Photon
 # 0x32              Particle Electron (FUTURE)
 
+# REGISTERS
+# ADDR:0x30
+# REG#       SZ     RESPONSE
+# ----       --     --------
+# readBytesReg(REG,SZ): Read only
+# 0x01        1     Return # of msgs in selected input queue
+# 0x02        1     Return # of msgs in selected output queue
+# 0x03        1     Input queue select (1=Commands;2=Data)
+# 0x04        1     Output queue select (1=Commands;2=Data)
+# 0x05        1     Get next message from selected output queue (1=OK; 2=FAIL)
+# 0x06        1     Get size of current output message
+# 0x07        x     Fetch current message with size x 
+# 0x08        1     Output message sequence
+#                     1 = old message
+#                     2 = new message was pulled from selected queue
+#                     3 = size was requested
+#                     Once a message is read, status returns to 1.
+#
+# A response of 0 may indicate an I/O error
+# CONSTANTS FOR ABOVE:
+##
+regs = {
+  "NMSG_INPUT": 1,
+  "NMSG_OUTPUT": 2,
+  "QSEL_INPUT": 3,
+  "QSEL_OUTPUT": 4,
+  "GET_NEXT_MSG": 5,
+  "GET_MSG_SIZE": 6,
+  "FETCH_MSG": 7,
+  "GET_MSG_SEQ": 8,
+}
+
+# Register write does not support bytearray input so use plain
+# write.  Strings need to be greater than one byte.
+# write(DATA)
+#   DATA will be added to the queue specified by REG 0x07 
+##
+
+# VALID COMMANDS
+# COMMAND           DESCRIPTION
+# mem               Show free memory
+# cqcmd             Clear command queue
+# cqdata            Clear data queue
+# icmd              Set input queue to Command
+# idata             Set input queue to Data
+# ocmd              Set output queue to Command
+# odata             Set output queue to Data
+# ping1             Ping HomeXBee
+# ping2             Ping GreenXBee
+# ping3             Ping GreenSNet
+# ping4             Ping GreenMcp
+# r[1-4]{on|off}    Turn relay #[1-4] {on|off}
+# rstat             Get relay status
+# wd1               Weather block  1:
+# gp1               GPS block      1:
+##
+
+# OUTPUT
+##
+# In general strings that start with ($) and end with (#)
+# are data values from sensors or devices.   In some
+# cases other strings in the Data queue may be re-interpreted
+# as Commands.  Sensor and data readings are described in
+# a separate document.
+##
+
 # RTS (request to send) wiring notes
 # P8_11 is connected to a pulldown resistor and path continues
 # through a level shifter (Adafruit I2C-safe bidirectional Logic Level
@@ -37,11 +103,13 @@
 ##
 
 # TODO:
+#   Rewrite communication code to use register responses
+#   Get wd1 to return data
 #   daemon vs. interactive mode
 #   Reading of GPIO pin is hardcoded for now.  We should create a
 #   library/class wrapper to extend mraa so there are extra
 #   functions:
-#     mraa.available() [true/false; returns false if pin is not set]
+#     mraa.available() [size of next message; 0 otherwise]
 #     mraa.setRTS(pin) [set a gpio pin to watch]
 #     mraa.getRTS()    [indicate if a pin has been set]
 #     mraa.resetRTS()  [attempt to reset the backend GPIO]
@@ -77,44 +145,58 @@ def kbdListener():
     if kbdInput == "exit":
       break
 
-# Convert message to bytearray
-#msg = "mem\n"
-#msg = "ncmd\n"
-#msg = "mem\nncmd\nwd1\nncmd\nmem\n"
-#msg = "mem\nwd1\n"
-#msgarr = [ord(i) for i in msg]
-#print len(msgarr)
-
-# Send bytes
+# Return available data like the Arduino available() function
 ##
-#i2c.write(bytearray(msg))
-
 def data_available():
-  ret = False
+  sz = 0
 
+  # If RTS is LOW, there is data ready to send from
+  # currently selected output queue.  We let the data
+  # reader take care if this is really an old message.
+  ##
   if GPIO.input(i2c_rts_pin) == 0:
-    ret = True
+    ret = i2c.readBytesReg(reg["GET_MSG_SIZE"],1)
+    sz = ord(ret)
+    if sz > 32: sz = 0
 
-  return ret
+  return sz
 
+# Fetch next message out of the currently selected
+# output queue.
 def fetch_data():
-  # Part 0 (initiate data request)
+  # Confirm message sequence, we might need to
+  # re-read an older message in case of I/O
+  # error.
   ##
-  lstr = 33
-  i2c.write(bytearray([lstr]))
-  # Part 1
-  ##
-  nbytes = i2c.read(1)
-  if ord(nbytes) == 0:
-    # No data?
+  ret = i2c.readBytesReg(reg["GET_MSG_SEQ"],1)
+  seq = ord(ret)
+  if seq == 1:
+    # This is an old message, request the next one in the queue
     ##
-    return
-
-  print ">",ord(nbytes)
-  # Part 2
+    ret = i2c.readBytesReg(reg["GET_NEXT_MSG",1)
+    ret = ord(ret)
+    if ret == 0:
+      # I/O error, exit
+      return
+    seq = 2
+    
+  # Fetch # of bytes in the current message
   ##
-  data = i2c.read(ord(nbytes))
-  print ">",data
+  sz = 0
+  if seq == 2:
+    ret = i2c.readBytesReg(reg["GET_MSG_SIZE",1)
+    ret = ord(ret)
+    if ret == 0:
+      # I/O error, exit
+      return
+    sz = ret
+    seq = 3
+
+  # Attempt to fetch message
+  if seq == 3 and sz > 0:
+    ret = i2c.readBytesReg(reg["FETCH_MSG"],sz)
+    print ">",ret
+
 
 # Start keyboard reader thread
 ##
@@ -135,11 +217,8 @@ i2c = m.I2c(2,True)
 ##
 i2c.address(HomeXBee)
 
-# Go into main thread loop
-# \n = 10
-# \r = 13
+# Main thread: loop()
 ##
-idlect = 0
 while True:
   activity = False
   if kbdReady:
@@ -152,35 +231,14 @@ while True:
       print ">",kbdInput,lstr
       # Send parts 1 and 2
       ##
-      i2c.write(bytearray([lstr]))
+      #i2c.write(bytearray([lstr]))
       i2c.write(bytearray([ord(i) for i in kbdInput]))
     activity = True
   # Check to see if slave has data
   ##
-  if data_available():
+  if data_available() > 0:
     fetch_data()
 
   if activity == False:
     time.sleep(0.1)
-
-sys.exit()
-while True:
-  data = i2c.read(32)
-  msgfl = 0
-  if len(data) == 32:
-    msg = ""
-    for i in data:
-      #print i
-      if i != 10 and i != 13 and i != 255:
-        msg = msg + chr(i)
-      if i == 10 or i == 13:
-        if len(msg) > 0:
-          if msg != "EOL":
-            print "MSG:",msg
-            msgfl = 1
-            nfail = 0
-            msg = ""
-    if msgfl == 0 or msg == "EOL":
-      time.sleep(1)
-      nfail = nfail + 1
 

@@ -1,3 +1,19 @@
+# 2017-05-24
+
+TODO:
+* Refactor GreenMcp.ino
+* Install RTS line between GreenMcp and GreenXBee to alleviate the
+necessary polling between these two devices.
+* Re-test communication lines.
+* Add i2cTest.ino and i2cTest.py code for testing and demonstration
+of how the I2C is used in this project.
+
+Refactoring using I2C register types.  This is very efficient for
+sending appropriate signals and returning key information for data
+and command queues.  The message passing is now also incorporated
+into that scheme and seems to operate much better using the mraa
+library.
+
 # 2017-05-23
 
 Success.  The HomeXBee and mcp.py can pass data back and forth thanks to 
