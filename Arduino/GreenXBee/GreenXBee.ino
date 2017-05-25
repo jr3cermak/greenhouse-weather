@@ -40,6 +40,7 @@
   -------           ------
   <master>          Particle Electron
   0x20              Arduino RedBoard/XBee
+    RTS             D12 (GreenXBee) -> HV4(LVL)LV4 -> D2 (GreenMcp)
   0x21              Arduino Mega 2560
 
   Command Requests (Type: L=Local;R=Remote)
@@ -56,6 +57,7 @@
 // Particle code compatibility; add a D prefix to digital pins
 const byte D2 = 2;
 const byte D3 = 3;
+const byte D12 = 12;
 
 // Define baud rates in which to communicate
 const int SERIAL_BAUD = 9600;
@@ -85,12 +87,14 @@ String msgBuffer = "";
 // Last register requested
 byte lastReg = 0;
 // Current message
-String outputMsg = "";
-// Input queue select
+// Output messages should never be zero in length
+String outputMsg = "INIT";
+// Input queue select (I2C)
 byte inputQueue = 1;
-// Output queue select
-byte outputQueue = 2;
+// Output queue select (I2C)
+byte outputQueue = 1;
 // Message sequence
+// Default: OLD MESSAGE
 byte msgSeq = 1;
 
 // Define register constants
@@ -133,7 +137,7 @@ HardwareSerial *tty;
 #define DEBUG_LOOP
 #if defined(DEBUG_LOOP)
 //#define DEBUG_LOOP_TICK
-const int DEBUG_LOOP_DELAY = 1000;
+const int DEBUG_LOOP_DELAY = 5000;
 #endif
 
 // Functions
@@ -142,6 +146,12 @@ const int DEBUG_LOOP_DELAY = 1000;
 // We will send data to the master based on
 // lastReg sent by readBytesReg().
 void sendDataToMaster() {
+#if defined(DEBUG_SERIAL)
+  tty->print(F("msgSeq>"));
+  tty->print(msgSeq);
+  tty->print(F(" lastReg>"));
+  tty->println(lastReg);
+#endif
   switch (lastReg) {
     case NMSG_INPUT:
       switch (inputQueue) {
@@ -214,7 +224,7 @@ void readDataFromMaster(int numBytes) {
     lastReg = Wire.read();
 #if defined(DEBUG_SERIAL)
     tty->print(F("REG="));
-    tty->println(String(lastReg));
+    tty->println(lastReg);
 #endif
   } else if (numBytes > 1) {
     // Read inbound message from Master, the actual length is not really
@@ -273,7 +283,7 @@ void readDataFromMaster(int numBytes) {
   }
 #if defined(DEBUG_SERIAL)
   tty->print(F("$dataQ="));
-  tty->println(dataQ.count());
+  tty->print(dataQ.count());
   tty->print(F(" $cmdQ="));
   tty->println(cmdQ.count());
 #endif
@@ -337,6 +347,12 @@ void setup() {
   // Master has requested data
   Wire.onRequest(sendDataToMaster);
 
+  // Define a RTS line to mcp.py
+  pinMode(D12, OUTPUT);
+  // Default signal is HIGH; when a message is ready pull LOW
+  digitalWrite(D12, HIGH);
+
+  // This should always be at the end of setup()
 #if defined(DEBUG_SERIAL)
   // Change this to the appropriate serial device for debugging
   tty = &Serial;
@@ -382,19 +398,29 @@ void loop() {
 #if defined(DEBUG_SERIAL)
     // If we see a character, send to serial console
     if (c != 24) {
-      tty->write(c);
+      //tty->write(c);
     }
 #endif
     switch (c) {
       case 10: // LF  (^J)(\n)
       case 13: // CR  (^M)(\r)
-        // If we have something in the buffer, add it to cmdQ
+        // Parse the message if we see CR and/or LF
+        // Messages that start with '$' are data, the rest are commands.
+        // Place in appropriate queue
         if (msgBuffer.length() > 0) {
-          cmdQ.push(msgBuffer);
+          if (msgBuffer.charAt(0) == '$') {
+            dataQ.push(msgBuffer);
 #if defined(DEBUG_SERIAL)
-          tty->print(F("qCmd="));
-          tty->println(msgBuffer);
+            tty->print(F("+qData="));
+            tty->println(msgBuffer);
 #endif
+          } else {
+            cmdQ.push(msgBuffer);
+#if defined(DEBUG_SERIAL)
+            tty->print(F("+qCmd="));
+            tty->println(msgBuffer);
+#endif
+          }
           msgBuffer = "";
         }
         break;
@@ -411,9 +437,24 @@ void loop() {
   // If there is data, send a line back.
   if (activity == false && dataQ.count() > 0) {
     String dataMsg = "";
+    activity = true;
     dataMsg = dataQ.pop();
     sendRemote(dataMsg);
   }
+
+  int val = digitalRead(D12);
+  if (activity == false && val == HIGH && cmdQ.count() > 0) {
+    digitalWrite(D12, LOW);
+  }
+  val = digitalRead(D12);
+  // temporarily show D12 state
+#if defined(DEBUG_SERIAL)
+  tty->print(F("dataQ="));
+  tty->print(dataQ.count());
+  tty->print(F(" D12State("));
+  tty->print(val);
+  tty->println(F(")"));
+#endif
 
 #if defined(DEBUG_LOOP)
   // If there was no activity, rest for a short bit

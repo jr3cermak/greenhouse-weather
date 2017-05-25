@@ -88,12 +88,14 @@ String msgBuffer = "";
 // Last register requested
 byte lastReg = 0;
 // Current message
-String outputMsg = "";
+// Output messages should never be zero in length
+String outputMsg = "INIT";
 // Input queue select
 byte inputQueue = 1;
 // Output queue select
 byte outputQueue = 2;
 // Message sequence
+// Default: OLD MESSAGE
 byte msgSeq = 1;
 
 // Define register constants
@@ -222,7 +224,7 @@ void readDataFromMaster(int numBytes) {
     lastReg = Wire.read();
 #if defined(DEBUG_SERIAL)
     tty->print(F("REG="));
-    tty->println(String(lastReg));
+    tty->println(lastReg);
 #endif
   } else if (numBytes > 1) {
     // Read inbound message from Master, the actual length is not really
@@ -281,7 +283,7 @@ void readDataFromMaster(int numBytes) {
   }
 #if defined(DEBUG_SERIAL)
   tty->print(F("$dataQ="));
-  tty->println(dataQ.count());
+  tty->print(dataQ.count());
   tty->print(F(" $cmdQ="));
   tty->println(cmdQ.count());
 #endif
@@ -343,7 +345,8 @@ void setup() {
 
   // Define a RTS line to mcp.py
   pinMode(D12, OUTPUT);
-  digitalWrite(D12, HIGH);  // Default signal is HIGH; when a message is ready pull LOW
+  // Default signal is HIGH; when a message is ready pull LOW
+  digitalWrite(D12, HIGH);
 
   // This should always be at the end of setup()
 #if defined(DEBUG_SERIAL)

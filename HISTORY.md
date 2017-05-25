@@ -1,9 +1,48 @@
 # 2017-05-24
 
+Data communications somewhat restored in the refactoring.  The second
+RTS line is working.  
+Command goes from mcp.py -> HomeXBee -> GreenXBee -> GreenMcp
+```
+0000035166 [app] INFO: GET_MSG_SEQ RET: 1 RES:1
+0000035214 [app] INFO: GET_NEXT_MSG RET:1 RES:1
+0000035272 [app] INFO: GET_MSG_SIZE RET:1 RES:3
+0000035330 [app] INFO: >wd1
+```
+
+General:
+* We need to guard against zero length messages in the queues
+
+mcp.py:
+* Fixed up some spelling mistakes in variables
+
+GreenXbee.ino:
+* Data coming in is queued by looking for '$' at start of the message.
+* Use new RTS line to indicate when commands are ready for the
+GreenMcp(MASTER).
+
+GreenMcp.ino:
+* Setup RTS pin on D2
+* Refactor communication and utilize new RTS line from GreenXBee
+* Has a similar function to python mraa library: readBytesReg()
+  that uses a communications buffer for messages.  Uses snprintf
+  to reduce memory fragmentation.
+
+FUTURE CONSIDERATIONS:
+* https://community.particle.io/t/safe-way-to-build-strings-without-memory-fragmentation/27150/5
+* We may need a daily or periodic reboot of devices, at least the
+Photon/Electron(s) to clean up any memory fragmentation due to 
+String use.   We will not implement this now to see how long the
+devices run without reboot.
+* The QueueList might be adaptable later to use a
+const char* block with a linked list of structures that address
+strings in the block.  This may be a specialized queue for Strings
+and break the templating nature of the QueueList library.
+
 TODO:
 * Refactor GreenMcp.ino
 * Install RTS line between GreenMcp and GreenXBee to alleviate the
-necessary polling between these two devices.
+unecessary polling between these two devices.
 * Re-test communication lines.
 * Add i2cTest.ino and i2cTest.py code for testing and demonstration
 of how the I2C is used in this project.
