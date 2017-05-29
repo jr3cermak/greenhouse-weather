@@ -1,3 +1,47 @@
+# 2017-05-29
+
+Now for general code and wiring cleanup (hardening).  Need to calibrate
+and deploy some additional sensors.
+
+Communication now working with a minimal setup to allow the relay to turn on
+for 30 seconds and turn off.  One casualty so far, one 5A fuse.
+
+This shows some sample commands send from inside to the greenhouse and
+data returning.  Weather data off the SparkFun Weather Shield (wd1/gp3),
+on board temperature off the pressure sensor and humidity/temperature
+sensor.  GPS data time/date from the GPS module.  Soil temperature/soil
+humidity off a SHT10 sensor (wd5).
+
+```
+gp3
+sent> gp3 len( 3 )
+< $DT=05/29/2017,TM=19:08:12#
+wd1
+sent> wd1 len( 3 )
+< $TP=89.4,HH=15.68,HT=89.4#
+wd5
+sent> wd5 len( 3 )
+< $ST=61.36,SH=97.70#
+```
+We may want to consider rewriting these responses in json so they are
+immediately compatible with Node-Red, Ubidots and Particle.
+
+The XBee communication is not perfect.  There are drop outs.  Not totally
+unexpected since I am transmitting through several walls.  I just reasoned
+out a way to check on the last packet sent.  New command: lps (last packet
+sent).
+
+Adding the RTS line from the Arduino back to the Electron and BBBW works
+quite well.  We have to trap for conditions where the Arduino loses power
+dropping the RTS line.  There are attempts to get data, but the device
+is not there.
+
+Added a bit of security.  There is a four digit access code that you can
+set in Private.h.  Note: You will not find it on the github site.  You
+need to write it.  It will contain all the details not to be shared
+publicly.  If you create a new repository, be sure to include it in your
+.gitignore file.
+
 # 2017-05-24
 
 Data communications somewhat restored in the refactoring.  The second

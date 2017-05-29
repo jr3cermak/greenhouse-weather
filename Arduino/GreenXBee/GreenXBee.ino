@@ -81,21 +81,26 @@ QueueList <String> dataQ;
 // Define an inbound command buffer
 String msgBuffer = "";
 
-// We are now using the readBytesReg() and write()
-// functions of libmraa.   We need to keep track of
-// a few things.
-// Last register requested
-byte lastReg = 0;
 // Current message
 // Output messages should never be zero in length
 String outputMsg = "INIT";
+// Queue types: 1 = Command; 2 = Data
+const byte COMMAND_QUEUE = 1;
+const byte DATA_QUEUE = 2;
 // Input queue select (I2C)
-byte inputQueue = 1;
+byte inputQueue = COMMAND_QUEUE;
 // Output queue select (I2C)
-byte outputQueue = 1;
-// Message sequence
-// Default: OLD MESSAGE
-byte msgSeq = 1;
+byte outputQueue = COMMAND_QUEUE;
+// Message sequence (last request)
+// 0 : I/O error
+// 1 : Next message was requested
+// 2 : Get message size
+// 3 : Get message
+const byte MSG_SEQ_IO = 0;
+const byte MSG_SEQ_NEXTMSG = 1;
+const byte MSG_SEQ_SIZE = 2;
+const byte MSG_SEQ_GETMSG = 3;
+byte msgSeq = MSG_SEQ_IO;
 
 // Define register constants
 const byte NMSG_INPUT = 1;
@@ -106,6 +111,11 @@ const byte GET_NEXT_MSG = 5;
 const byte GET_MSG_SIZE = 6;
 const byte FETCH_MSG = 7;
 const byte GET_MSG_SEQ = 8;
+// We are now using the readBytesReg() and write()
+// functions of libmraa.   We need to keep track of
+// a few things.
+// Last register requested
+byte lastReg = 0;
 
 // Debugging options
 
@@ -137,7 +147,7 @@ HardwareSerial *tty;
 #define DEBUG_LOOP
 #if defined(DEBUG_LOOP)
 //#define DEBUG_LOOP_TICK
-const int DEBUG_LOOP_DELAY = 5000;
+const int DEBUG_LOOP_DELAY = 1000;
 #endif
 
 // Functions
@@ -155,20 +165,20 @@ void sendDataToMaster() {
   switch (lastReg) {
     case NMSG_INPUT:
       switch (inputQueue) {
-        case 1: // cmdQ
+        case COMMAND_QUEUE:
           Wire.write(cmdQ.count());
           break;
-        case 2: // dataQ
+        case DATA_QUEUE:
           Wire.write(dataQ.count());
           break;
       }
       break;
     case NMSG_OUTPUT:
       switch (outputQueue) {
-        case 1: // cmdQ
+        case COMMAND_QUEUE:
           Wire.write(cmdQ.count());
           break;
-        case 2: // dataQ
+        case DATA_QUEUE:
           Wire.write(dataQ.count());
           break;
       }
@@ -180,14 +190,15 @@ void sendDataToMaster() {
       Wire.write(outputQueue);
       break;
     case GET_NEXT_MSG:
+      msgSeq = MSG_SEQ_NEXTMSG;
       outputMsg = "";
       switch (outputQueue) {
-        case 1: // cmdQ
+        case COMMAND_QUEUE:
           if (cmdQ.count() > 0) {
             outputMsg = cmdQ.pop();
           }
           break;
-        case 2: // dataQ
+        case DATA_QUEUE:
           if (dataQ.count() > 0) {
             outputMsg = dataQ.pop();
           }
@@ -198,18 +209,37 @@ void sendDataToMaster() {
       } else {
         Wire.write(2);
       }
-      msgSeq = 2;
       break;
     case GET_MSG_SIZE:
       Wire.write(outputMsg.length());
-      msgSeq = 3;
+      msgSeq = MSG_SEQ_SIZE;
       break;
     case FETCH_MSG:
       Wire.write(outputMsg.c_str());
-      msgSeq = 1;
+      msgSeq = MSG_SEQ_GETMSG;
       break;
     case GET_MSG_SEQ:
+      // Master will continue to poll this register until
+      // messages queue is empty.  We will let it poll one
+      // extra time to ensure we get past any I/O errors.
       Wire.write(msgSeq);
+      // Special case, if we see this after a FETCH_MSG,
+      // then set the msgSeq back to MSG_SEQ_IO.
+      if (msgSeq == 3) {
+        msgSeq = MSG_SEQ_IO;
+      }
+      switch (outputQueue) {
+        case COMMAND_QUEUE:
+          if (cmdQ.count() == 0) {
+            digitalWrite(D12, HIGH);
+          }
+          break;
+        case DATA_QUEUE:
+          if (dataQ.count() == 0) {
+            digitalWrite(D12, HIGH);
+          }
+          break;
+      }
       break;
   }
 }
@@ -222,14 +252,14 @@ void readDataFromMaster(int numBytes) {
   // as a register request.
   if (numBytes == 1) {
     lastReg = Wire.read();
-#if defined(DEBUG_SERIAL)
-    tty->print(F("REG="));
-    tty->println(lastReg);
-#endif
   } else if (numBytes > 1) {
     // Read inbound message from Master, the actual length is not really
     // important.
     String inMsg = "";
+    // The default input queue is determined by the inputQueue, but
+    // if the message begins with '$' we enforce this to be put into
+    // the data queue.
+    int defaultQueue = inputQueue;
     while (Wire.available()) {
       char c = Wire.read();
       // If we have multiple commands, separate them by ASCII(59)(;)
@@ -237,16 +267,20 @@ void readDataFromMaster(int numBytes) {
         // If the message is not empty, add it to the queue
         // and clear the variable
         if (inMsg.length() > 0) {
-          switch (inputQueue) {
-            case 1: // cmdQ
+          defaultQueue = inputQueue;
+          if (inMsg.charAt(0) == '$') {
+            defaultQueue = DATA_QUEUE;
+          }
+          switch (defaultQueue) {
+            case COMMAND_QUEUE:
               cmdQ.push(inMsg);
               break;
-            case 2: // dataQ
+            case DATA_QUEUE:
               dataQ.push(inMsg);
           }
 #if defined(DEBUG_SERIAL)
           tty->print(F("+q="));
-          tty->print(inputQueue);
+          tty->print(defaultQueue);
           tty->print(F(":["));
           tty->print(inMsg);
           tty->println(F("]"));
@@ -264,16 +298,20 @@ void readDataFromMaster(int numBytes) {
     // If the message is not empty, add it to the queue
     // and clear the variable
     if (inMsg.length() > 0) {
-      switch (inputQueue) {
-        case 1: // cmdQ
+      defaultQueue = inputQueue;
+      if (inMsg.charAt(0) == '$') {
+        defaultQueue = DATA_QUEUE;
+      }
+      switch (defaultQueue) {
+        case COMMAND_QUEUE:
           cmdQ.push(inMsg);
           break;
-        case 2: // dataQ
+        case DATA_QUEUE:
           dataQ.push(inMsg);
       }
 #if defined(DEBUG_SERIAL)
       tty->print(F("$+q="));
-      tty->print(inputQueue);
+      tty->print(defaultQueue);
       tty->print(F(":["));
       tty->print(inMsg);
       tty->println(F("]"));
@@ -312,21 +350,30 @@ void processCommand() {
   String cmd = "";
   String rsp = "";
   cmd = cmdQ.pop();
+#if defined(DEBUG_SERIAL)
+  tty->print(F("Process cmd:"));
+  tty->println(cmd);
+#endif
   if (cmd == "ncmd") {
     rsp = "$cmdQ:" + String(cmdQ.count());
   } else if (cmd == "mem") {
 #if defined(DEBUG_MEMFREE)
     rsp = "$mem:" + String(freeMemory());
 #endif
-  } else if (cmd == "wd1") {
+  } else if (
+    cmd == "wd1" || cmd == "wd2" || cmd == "wd3" || cmd == "wd4" || cmd == "wd5"
+    || cmd == "gp1" || cmd == "gp2" || cmd == "gp3"
+    || cmd == "r1on" || cmd == "r1off" || cmd == "r2on" || cmd == "r2off"
+    || cmd == "r3on" || cmd == "r3off" || cmd == "r4on" || cmd == "r4off"
+    || cmd.startsWith("acc:")
+    || cmd == "relayEnable" || cmd == "relayDisable"
+  ) {
     rsp = cmd;
   }
   if (rsp.length() > 0) {
     dataQ.push(rsp);
 #if defined(DEBUG_SERIAL)
-    tty->print(F("Process cmd:"));
-    tty->print(cmd);
-    tty->print(F(" Resp:"));
+    tty->print(F("Process Response:"));
     tty->print(rsp);
     tty->print(F(" #dataQ="));
     tty->println(dataQ.count());
@@ -361,7 +408,7 @@ void setup() {
   // Wait for serial port to connect
   while (!tty) {
   }
-  tty->println(F("Serial setup() complete."));
+  tty->println(F("GreenXBee: Serial setup() complete."));
 #endif
 }
 
@@ -369,9 +416,13 @@ void setup() {
 void loop() {
   // Set an activity flag
   // If this is set to true, then we ignore the loop delay
-  bool activity = false;
+  bool activity;
   // Inbound character from serial or XBee
-  char c = 0;
+  char c;
+
+  // Top of loop make sure things are intialized
+  activity = false;
+  c = 0;
 
   // Process commands
   // We don't process commands here
@@ -442,20 +493,22 @@ void loop() {
     sendRemote(dataMsg);
   }
 
-  int val = digitalRead(D12);
-  if (activity == false && val == HIGH && cmdQ.count() > 0) {
-    digitalWrite(D12, LOW);
-  }
-  val = digitalRead(D12);
-  // temporarily show D12 state
-#if defined(DEBUG_SERIAL)
-  tty->print(F("dataQ="));
-  tty->print(dataQ.count());
-  tty->print(F(" D12State("));
-  tty->print(val);
-  tty->println(F(")"));
-#endif
+  // If there are commands to send, set the RTS LOW to
+  // tell the master to come collect it.
+  if (activity == false && cmdQ.count() > 0) {
+    int val = digitalRead(D12);
 
+#if defined(DEBUG_SERIAL)
+    tty->print(F("cmdQ="));
+    tty->print(cmdQ.count());
+    tty->print(F(" D12State("));
+    tty->print(val);
+    tty->println(F(")"));
+#endif
+    if (val == HIGH) {
+      digitalWrite(D12, LOW);
+    }
+  }
 #if defined(DEBUG_LOOP)
   // If there was no activity, rest for a short bit
   if (activity == false) {
