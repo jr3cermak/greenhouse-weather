@@ -35,10 +35,12 @@
 # 0x06        1     Get size of current output message
 # 0x07        x     Fetch current message with size x 
 # 0x08        1     Output message sequence
-#                     1 = old message
-#                     2 = new message was pulled from selected queue
-#                     3 = size was requested
-#                     Once a message is read, status returns to 1.
+#                     0 = no message or I/O error
+#                     1 = next message was requested
+#                     2 = size of message was requested
+#                     3 = attempt was made to retrieve message
+#                     If client was successful, please send ACK by
+#                     sending a request to ADDR 0x08
 #
 # A response of 0 may indicate an I/O error
 # CONSTANTS FOR ABOVE:
@@ -53,6 +55,15 @@ regs = {
   "FETCH_MSG": 7,
   "GET_MSG_SEQ": 8,
 }
+lastReg = 0
+msgSeq = {
+  "MSG_SEQ_IO": 0,
+  "MSG_SEQ_NEXTMSG": 1,
+  "MSG_SEQ_SIZE": 2,
+  "MSG_SEQ_GETMSG": 3,
+}
+lastMsgSeq = 0
+
 
 # Register write does not support bytearray input so use plain
 # write.  Strings need to be greater than one byte.
@@ -145,57 +156,67 @@ def kbdListener():
     if kbdInput == "exit":
       break
 
-# Return available data like the Arduino available() function
+# This should just return true or false if the slave
+# thinks it has data.
 ##
 def data_available():
-  sz = 0
-
   # If RTS is LOW, there is data ready to send from
-  # currently selected output queue.  We let the data
-  # reader take care if this is really an old message.
+  # currently selected output queue.
   ##
   if GPIO.input(i2c_rts_pin) == 0:
-    ret = i2c.readBytesReg(reg["GET_MSG_SIZE"],1)
-    sz = ord(ret)
-    if sz > 32: sz = 0
+    return True
 
-  return sz
+  return False
 
 # Fetch next message out of the currently selected
 # output queue.
-def fetch_data():
+def fetchData():
   # Confirm message sequence, we might need to
-  # re-read an older message in case of I/O
+  # re-read an older message in case of an I/O
   # error.
   ##
-  ret = i2c.readBytesReg(reg["GET_MSG_SEQ"],1)
+  ret = 0
+  seq = 0
+  sz = 0
+  ret = i2c.readBytesReg(regs["GET_MSG_SEQ"],1)
   seq = ord(ret)
-  if seq == 1:
+  if seq <= 1:
     # This is an old message, request the next one in the queue
     ##
-    ret = i2c.readBytesReg(reg["GET_NEXT_MSG",1)
+    ret = i2c.readBytesReg(regs["GET_NEXT_MSG"],1)
     ret = ord(ret)
     if ret == 0:
       # I/O error, exit
       return
-    seq = 2
+    if ret == 1:
+      seq = 2
+    if ret == 2:
+      # Failed, do something different here
+      ret = 2
     
   # Fetch # of bytes in the current message
+  # This needs to be run if seq == 3 since size is needed
   ##
   sz = 0
-  if seq == 2:
-    ret = i2c.readBytesReg(reg["GET_MSG_SIZE",1)
+  if seq >= 2:
+    ret = i2c.readBytesReg(regs["GET_MSG_SIZE"],1)
     ret = ord(ret)
     if ret == 0:
       # I/O error, exit
       return
     sz = ret
+    if sz == 0:
+      return
     seq = 3
 
   # Attempt to fetch message
   if seq == 3 and sz > 0:
-    ret = i2c.readBytesReg(reg["FETCH_MSG"],sz)
-    print ">",ret
+    ret = i2c.readBytesReg(regs["FETCH_MSG"],sz)
+    if (ret == 0):
+      # I/O error
+      return;
+    print "<",ret
+    ret = i2c.readBytesReg(regs["GET_MSG_SEQ"],1)
 
 
 # Start keyboard reader thread
@@ -228,7 +249,7 @@ while True:
       break
     else:
       lstr = len(kbdInput)
-      print ">",kbdInput,lstr
+      print "sent>",kbdInput,"len(",lstr,")"
       # Send parts 1 and 2
       ##
       #i2c.write(bytearray([lstr]))
@@ -237,7 +258,7 @@ while True:
   # Check to see if slave has data
   ##
   if data_available() > 0:
-    fetch_data()
+    fetchData()
 
   if activity == False:
     time.sleep(0.1)
