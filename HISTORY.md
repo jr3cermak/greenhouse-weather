@@ -1,3 +1,12 @@
+# 2017-06-08
+
+Reworked two SparkFun sensor libraries so they do not re-initialize
+as I2C masters.  This code was moved into the Electron without an
+issue.   Still have some packet drops.   Discovered where an I2C
+clock line got disconnected.  This caused a loopback condition.
+Will rewrite responses in JSON before dealing with dropped packets.
+The Ubidots API website throws a lot of errors.
+
 # 2017-05-29
 
 Now for general code and wiring cleanup (hardening).  Need to calibrate

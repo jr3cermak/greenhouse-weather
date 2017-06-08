@@ -23,6 +23,8 @@
  * 0x20     GreenXBee.ino
  *  RTS     D2 (GreenMcp) <-> LV4(LVL)HV4 <-> D12 (GreenXBee)
  * 0x21     GreenSNet.ino
+ * 0x40     HTU21D
+ * 0x60     MPL3115A2
  *
  * Tasks: T[ODO] -> I[NWORK] -> D[ONE]
  *   T:Cleanup QueueList library; it does some interesting things!
@@ -53,6 +55,8 @@
  */
 
 // Local libraries ../lib
+#include <SparkFunMPL3115A2.h>
+#include <SparkFunHTU21D.h>
 #include <QueueList.h>
 #include <RelayShield.h>
 #include <Private.h>
@@ -95,15 +99,15 @@ const byte GET_MSG_SEQ = 8;
 // Allocate appropriate serial port pointer type
 // Use "particle serial monitor" to see traffic
 #if defined(DEBUG_SERIAL_MODE_USART)
-USARTSerial *tty;
+USARTSerial *tty = NULL;
 #endif
 #if defined(DEBUG_SERIAL_MODE_USB)
-USBSerial *tty;
+USBSerial *tty = NULL;
 #endif
 #endif
 
 // Define two wire pointer
-TwoWire *i2c;
+TwoWire *i2c = NULL;
 // Define a communications buffer that should help against
 // memory fragmentation as seen with String use.
 char comBuf[32] = { 0 };
@@ -136,6 +140,10 @@ SerialLogHandler logHandler;
 
 // Define a Relay object
 RelayShield ghRelays;
+// Define HTU21D object
+HTU21D myHumidity;
+// Define MPL2115A2 object
+MPL3115A2 myPressure;
 
 // FUNCTIONS
 
@@ -404,6 +412,23 @@ void runLocalCommand(String cmd) {
     relayEnabled = 0;
     dataQ.push("$Relays:OFF#");
   }
+  if (cmd == "wd1") {
+    // Pressure sensor air temperature and air relative humidity
+    float tempf = myPressure.readTempF();
+    float pressure = myPressure.readPressure();
+    char rmsg[32];
+    snprintf(rmsg, sizeof(rmsg), "$TP=%.1f,PP=%.1f#",tempf,pressure);
+    dataQ.push(rmsg);
+  }
+  if (cmd == "wd3") {
+    // Humidity sensor air temperature and air relative humidity
+    float tempf = myHumidity.readTemperature();
+    tempf = (tempf * 9.0 / 5.0) + 32.0;
+    float humidity = myHumidity.readHumidity();
+    char rmsg[32];
+    snprintf(rmsg, sizeof(rmsg), "$HT=%.1f,HH=%.1f#",tempf,humidity);
+    dataQ.push(rmsg);
+  }
 }
 
 // This function processes queued commands
@@ -431,8 +456,7 @@ void processCommand() {
 
   // Commands for GreenSNet
   if (
-    cmd == "wd1" || cmd == "wd2" || cmd == "wd3" || cmd == "wd4"
-    || cmd == "wd5"
+    cmd == "wd2" || cmd == "wd4" || cmd == "wd5"
     || cmd == "gp1" || cmd == "gp2" || cmd == "gp3"
   ) {
     getGreenSNet(cmd);
@@ -442,6 +466,7 @@ void processCommand() {
     cmd == "r1on" || cmd == "r1off"
     || cmd == "r2on" || cmd == "r2off"
     || cmd == "relayEnable" || cmd == "relayDisable"
+    || cmd == "wd1" || cmd == "wd3"
     ) {
     runLocalCommand(cmd);
   }
@@ -537,6 +562,13 @@ void setup() {
   // Start I2C communication as MASTER
   i2c = &Wire;
   i2c->begin();
+
+  // Setup sensors, send the pointer to the I2C bus
+  myPressure.assign(*i2c);
+  myPressure.setModeBarometer();
+  myPressure.setOversampleRate(7);
+  myPressure.enableEventFlags();
+  myHumidity.assign(*i2c);
 
   // Start the one second timer
   checkStatus.start();

@@ -7,6 +7,29 @@
 # Source: https://github.com/intel-iot-devkit/mraa
 ##
 
+# Module imports
+##
+
+# Create a threaded python script
+# Main thread work with HomeXBee
+#   Subthread collects keyboard input
+##
+import threading
+
+# Standard python modules
+##
+import os, time, sys
+import argparse
+
+# mraa allows use of I2C
+##
+import mraa as m
+
+# Helps us setup the RTS line to listen for data
+# at the slave since BBBW can only act as a I2C Master.
+##
+import Adafruit_BBIO.GPIO as GPIO
+
 # BBBW
 # /sys/kernel/debug/pinctrl/44e10800.pinmux/pinmux-pins
 # pin 13 (44e10834.0): ocp:P8_11_pinmux (GPIO UNCLAIMED) function
@@ -64,7 +87,6 @@ msgSeq = {
 }
 lastMsgSeq = 0
 
-
 # Register write does not support bytearray input so use plain
 # write.  Strings need to be greater than one byte.
 # write(DATA)
@@ -114,8 +136,8 @@ lastMsgSeq = 0
 ##
 
 # TODO:
-#   Rewrite communication code to use register responses
-#   Get wd1 to return data
+#   Detect when RTS goes LOW but the XBee is really offline, don't crash
+#   Logging data
 #   daemon vs. interactive mode
 #   Reading of GPIO pin is hardcoded for now.  We should create a
 #   library/class wrapper to extend mraa so there are extra
@@ -126,15 +148,14 @@ lastMsgSeq = 0
 #     mraa.resetRTS()  [attempt to reset the backend GPIO]
 ##
 
-import threading
-import os, time, sys
-import mraa as m
-import Adafruit_BBIO.GPIO as GPIO
-
-# Create a threaded python script
-# Main thread work with HomeXBee
-#   Subthread collects keyboard input
+# Valid arguments to mcp.py
 ##
+parser = argparse.ArgumentParser()
+parser.add_argument("-c", help="send command")
+parser.add_argument("-d", help="deamon mode",action="store_true")
+parser.add_argument("-k", help="enable keyboard input", action="store_true")
+parser.add_argument("-r", help="run once to download any messages", action="store_true")
+args = parser.parse_args()
 
 # Globals
 ##
@@ -143,12 +164,15 @@ i2c_rts_pin = "P8_11"
 kbdInputRaw = ""
 kbdInput = ""
 kbdReady = False
+loopCt = 0
+ioErrors = 0
+dataCt = 0
 
 # Functions
 ##
 def kbdListener():
   global kbdInput, kdbInputRaw, kbdReady
-  print "Ready for input"
+  print "Ready for keyboard input"
   while True:
     kbdInputRaw = raw_input()
     kbdInput = kbdInputRaw
@@ -171,6 +195,7 @@ def data_available():
 # Fetch next message out of the currently selected
 # output queue.
 def fetchData():
+  global ioErrors, dataCt
   # Confirm message sequence, we might need to
   # re-read an older message in case of an I/O
   # error.
@@ -178,7 +203,14 @@ def fetchData():
   ret = 0
   seq = 0
   sz = 0
-  ret = i2c.readBytesReg(regs["GET_MSG_SEQ"],1)
+  # We have seen IO errors here before
+  ##
+  try:
+    ret = i2c.readBytesReg(regs["GET_MSG_SEQ"],1)
+  except:
+    ioErrors = ioErrors + 1
+    return
+
   seq = ord(ret)
   if seq <= 1:
     # This is an old message, request the next one in the queue
@@ -216,13 +248,14 @@ def fetchData():
       # I/O error
       return;
     print "<",ret
+    dataCt = dataCt + 1
     ret = i2c.readBytesReg(regs["GET_MSG_SEQ"],1)
-
 
 # Start keyboard reader thread
 ##
-listener = threading.Thread(target=kbdListener)
-listener.start()
+if args.k == True:
+  listener = threading.Thread(target=kbdListener)
+  listener.start()
 
 # Setup GPIO pin for input
 ##
@@ -237,6 +270,13 @@ i2c = m.I2c(2,True)
 # Address 0x30 (HomeXbee.ino)
 ##
 i2c.address(HomeXBee)
+
+# If we are running once and have a command
+# add it to keyboard buffer for sending.
+##
+if args.r == True and args.c != None:
+  kbdReady = True
+  kbdInput = args.c
 
 # Main thread: loop()
 ##
@@ -261,5 +301,17 @@ while True:
     fetchData()
 
   if activity == False:
+    loopCt = loopCt + 1
     time.sleep(0.1)
+
+    # if we are half way through and we have not seen data, try again
+    ##
+    if args.r == True and args.c != None and loopCt == 150 and dataCt < 2:
+      kbdReady = True
+      kbdInput = args.c
+
+  # Run for 30 sec
+  ##
+  if args.r == True and loopCt > 300:
+    sys.exit()
 
