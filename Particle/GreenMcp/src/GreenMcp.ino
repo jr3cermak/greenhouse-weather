@@ -174,9 +174,9 @@ int parseAccessCode(char nac[]) {
 }
 
 // Append to current communications buffer
-void writeComBuf(char s[]) {
+void writeComBuf(char c) {
   if (comBufPtr < comBufEnd) {
-    comBufPtr += snprintf(comBufPtr, comBufEnd-comBufPtr, "%s", s);
+    comBufPtr += snprintf(comBufPtr, comBufEnd-comBufPtr, "%c", c);
   }
 }
 
@@ -189,7 +189,7 @@ void clearComBuf() {
 
 // Build a readBytesReg(slave, reg_addr, nbytes) function
 int readBytesReg(uint8_t slaveAddr, uint8_t i2cReg, int nbytes) {
-  char c[2] = { 0 };
+  char c = 0;
   int nret = 0;
   i2c->beginTransmission(slaveAddr);
   i2c->write(i2cReg);
@@ -197,7 +197,7 @@ int readBytesReg(uint8_t slaveAddr, uint8_t i2cReg, int nbytes) {
   i2c->requestFrom((uint8_t)slaveAddr,(uint8_t)nbytes);
   clearComBuf();
   while(i2c->available()) {
-    c[0] = i2c->read();
+    c = i2c->read();
     writeComBuf(c);
     nret++;
   }
