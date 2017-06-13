@@ -1,5 +1,9 @@
 /* 
-Name: SingleOrMultipleParticleFunctions
+ * Project SingleOrMultipleParticleFunctions
+ * Description: Demonstrate the utility of Particle.function() to supply
+     one argument or separate arguments.
+ * Author: Rob Cermak
+ * Date: 2017-06-11
 
 A Google search for "hypotenuse calculator" was performed
 to obtain the formulas for this code.  The code assumes
@@ -53,7 +57,8 @@ Program assumptions:
 */
 
 // This #include statement was automatically added by the Particle IDE.
-// This is using the Particle IDE library JsonStreamingParser v1.0.5
+// This is using a modified Particle IDE library JsonStreamingParser v1.0.5
+// Once working, we will release v1.0.6
 #include <JsonStreamingParser.h>
 
 // Use primary serial over USB interface for logging output
@@ -127,6 +132,12 @@ class ExampleListener: public JsonListener {
     }
 };
 
+// We have to create a parser and listener each time
+// as the library does not end the document correctly.
+// IE: We can't define this globally and re-use it.
+JsonStreamingParser parser;
+ExampleListener listener;
+
 // FUNCTIONS
 
 // This just echo's a tick out to the log
@@ -176,15 +187,6 @@ int inputArgs(String inArgs)
 {
     char c;
     
-    // We have to create a parser and listener each time
-    // as the library does not end the document correctly.
-    // IE: We can't define this globally and re-use it.
-    JsonStreamingParser parser;
-    ExampleListener listener;
-    
-    // We need a listener to be connected to the parser
-    parser.setListener(&listener);    
-    
     Log.info("inArgs:%s", (const char *) inArgs);
 
     // Parse the input argument
@@ -231,6 +233,9 @@ void setup() {
     Particle.function("inputA",inputA);
     Particle.function("inputB",inputB);
     Particle.function("inputArgs",inputArgs);
+
+    // We need a listener to be connected to the parser
+    parser.setListener(&listener);
 
     // Start our tick timer
     tickTimer.start();
