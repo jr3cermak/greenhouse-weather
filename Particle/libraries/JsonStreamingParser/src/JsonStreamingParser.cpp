@@ -2,6 +2,7 @@
 
 Copyright (c) 2015 by Daniel Eichhorn
 Modifications (c) 2016 by Nick Thomson
+Modifications (c) 2017 by Rob Cermak
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -283,7 +284,7 @@ void JsonStreamingParser::endObject() {
     }
     myListener->endObject();
     state = STATE_AFTER_VALUE;
-    if (stackPos == -1) {
+    if (stackPos == 0) {
       endDocument();
     }
   }
@@ -429,7 +430,9 @@ int JsonStreamingParser::convertDecimalBufferToInt(char myArray[], int length) {
 
 void JsonStreamingParser::endDocument() {
     myListener->endDocument();
-    state = STATE_DONE;
+    // We actually are ready to start a new document.
+    // state = STATE_DONE;
+    state = STATE_START_DOCUMENT;
   }
 
 void JsonStreamingParser::endTrue() {

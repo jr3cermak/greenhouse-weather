@@ -38,15 +38,23 @@ This is a streaming parser, which means that you feed a stream of chars into the
 
 In your implementation of these methods you will have to write problem specific code to find the parts of the document that you are interested in. Please see the example to understand what that means. In the example the ExampleListener implements the event methods declared in the JsonListener interface and prints to the serial console when they are called.
 
+## Changes to 1.0.5
+
+The internal status of the listener is returned to STATE_START_DOCUMENT at the end of a JSON block, so
+it is ready to parse the next piece of input.
+
 ## License
 
 This code is available under the MIT license, which basically means that you can use, modify the distribute the code as long as you give credits to me (and Squix78 and Salsify) and add a reference back to this repository. Please read https://github.com/squix78/json-streaming-parser/blob/master/LICENSE for more detail...
 
 ## Credits
 
-First of all I'd like to thank Squix78 and Salsify for making their parsers available to the public.
+Based on version 1.0.5 by Nick Thomson <particledev@undergrid.org.uk>.
+
+Nick thanks Squix78 and Salsify for making their parsers available to the public.
 
 You find their repositories here:
 
+* Nick Thomson - https://github.com/Undergrid/JsonStreamingParser
 * Squix78 - https://github.com/squix78/json-streaming-parser
 * Salsify - https://github.com/salsify/jsonstreamingparser
