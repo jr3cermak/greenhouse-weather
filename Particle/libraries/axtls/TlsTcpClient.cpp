@@ -153,6 +153,8 @@ int TlsTcpClient::recv_Tls(void *ssl, uint8_t *in_data, int in_len) {
   SSL *real_ssl = (SSL *)ssl;
   TCPClient *sock = (TCPClient *) real_ssl->ssl_ctx->_client;
 
+  debug_tls("ssl(%p) ssl_ctx(%p) sock(%p)",real_ssl,real_ssl->ssl_ctx,sock);
+  debug_tls("sock->connected():%d sock->available():%d", sock->connected(), sock->available());
   if (sock->connected()) {
     if (sock->available() > 0) {
       ret = sock->read(in_data, in_len);
@@ -163,9 +165,6 @@ int TlsTcpClient::recv_Tls(void *ssl, uint8_t *in_data, int in_len) {
   }
 
   debug_tls("Want %d bytes, got %d bytes",in_len,ret);
-  delay(2000);
-  
-
   return ret;
 }
 
@@ -179,6 +178,8 @@ int TlsTcpClient::send_Tls(void *ssl, uint8_t *out_data, int out_len) {
   SSL *real_ssl = (SSL *)ssl;
   TCPClient *sock = (TCPClient *) real_ssl->ssl_ctx->_client;
 
+  debug_tls("ssl(%p) ssl_ctx(%p) sock(%p)",real_ssl,real_ssl->ssl_ctx,sock);
+  debug_tls("sock->connected():%d sock->available():%d", sock->connected(), sock->available());
   if (sock->connected()) {
     ret = sock->write(out_data, out_len);
   } else {

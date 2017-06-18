@@ -168,10 +168,18 @@ int sendParticle(void *ssl, uint8_t *rec_buf, int sz_buf) {
 
 /**
  * Read packet from the particle hardware
- * Returns number of bytes read.
+ * Returns number of bytes read.  Aliased to SOCKET_READ.
  */
 int recvParticle(void *ssl, uint8_t *rec_buf, int sz_buf) {
-  return -1;
+  int nbytes;
+
+  // We have to dig out the function call to send the data
+  SSL *real_ssl = (SSL *) ssl;
+  SSL_CTX *ssl_ctx = real_ssl->ssl_ctx;
+
+  debug_tls("recvParticle ssl(%p) ssl_ctx(%p) f_recv(%p)",ssl,ssl_ctx,ssl_ctx->f_send);
+  nbytes = ssl_ctx->f_recv(ssl, rec_buf, sz_buf);
+  return nbytes;
 }
 #endif
 
@@ -1352,17 +1360,17 @@ int basic_read(SSL *ssl, uint8_t **in_data)
                             ssl->need_bytes-ssl->got_bytes);
 #endif
 
+#if !defined(CONFIG_PLATFORM_PARTICLE)
     if (read_len < 0) 
     {
 #ifdef WIN32
         if (GetLastError() == WSAEWOULDBLOCK)
 #else
-#if !defined(CONFIG_PLATFORM_PARTICLE)
         if (errno == EAGAIN || errno == EWOULDBLOCK)
-#endif
 #endif
             return 0;
     }
+#endif
 
     /* connection has gone, so die */
     if (read_len <= 0)
