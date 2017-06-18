@@ -1,5 +1,14 @@
 # Changes since 2.1.13
 
+# 2017-06-18
+
+Next step is to tear apart the packets as the send_client_hello()
+is not working with the server.
+
+Enabled the SOCKET_READ driver.   We can now read and write.
+
+Solicited help on the Particle #Library forum.
+
 # 2017-06-17
 
 We are able to build and begin testing [44244]
