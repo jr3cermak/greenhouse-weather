@@ -1,0 +1,151 @@
+#!/bin/bash
+#set -x
+
+# Use sed to quickly update a downloaded library from
+# mbed to put in a form needed by the Particle build
+# cloud
+##
+
+# Save the operating ROOT directory
+##
+ROOT=`pwd`
+PARTICLE_PROJECT_DIR=/Users/cermak/Particle/projects
+
+# Define a main source directory (SRC)
+# Define the target Particle project directory (PPD)
+# New code not found in the source directory (ORG)
+#SRC=${ROOT}/mbedtls-2.4.2
+#PPD=${PARTICLE_PROJECT_DIR}/UbidotsDataFillNew/lib/tls
+SRC=${ROOT}/axtls-code
+ORG=${ROOT}/axtls-custom
+PPD=${PARTICLE_PROJECT_DIR}/axtls/lib
+
+# Special patch files
+##
+PATCHDIR=${ROOT}/axtls-patches
+
+# Original particle project tree
+##
+ORIG=""
+
+# Copy and rename crypto 
+##
+cd ${SRC}/crypto
+for i in $(ls *.c); do
+  cp ${i} ${PPD}/${i}pp
+done
+for i in $(ls *.h); do
+  cp ${i} ${PPD}/${i}
+done
+# Copy and rename ssl
+## 
+cd ${SRC}/ssl
+for i in $(ls *.c); do
+  cp ${i} ${PPD}/${i}pp
+done
+for i in $(ls *.h); do
+  cp ${i} ${PPD}/${i}
+done
+# Copy and rename custom code
+## 
+cd ${ORG}
+for i in $(ls *.c); do
+  cp ${i} ${PPD}/${i}pp
+done
+for i in $(ls *.h); do
+  cp ${i} ${PPD}/${i}
+done
+
+# Recompute patches
+cd ${PATCHDIR}
+for i in $(ls *.cpp *.h); do
+  if [ -e "${i}" -a -e "${i}.orig" ];
+  then
+    diff -u ${i}.orig ${i} > ${i}.patch
+  fi
+done
+
+# Do special patching in final directory
+##
+echo "Performing patching on specific files:"
+cd ${PPD}
+for i in $(ls *.cpp *.h); do
+  if [ -e "${PATCHDIR}/${i}.patch" ];
+  then
+    echo -n "  ";
+    patch -p0 < ${PATCHDIR}/${i}.patch
+  fi
+done
+
+# Do some more sweeping code changes
+##
+# printf -> //printf
+##
+cd ${PPD}
+for i in $(ls *.cpp *.h); do
+  sed -i .x -e '1,$s%^\(.*\)[[:blank:]]printf%\1//printf%g' $i
+  if [ -e "${i}.x" ];
+  then
+    rm ${i}.x
+  fi
+done
+
+exit
+
+# EXTRA UNUSED CODE HERE
+# For mbedTLS
+##
+
+# Do mass updates
+# Mostly to flatten include statements
+# fix casts on "volatile unsigned char *p = v" to
+#   "volatile unsigned char *p = (volatile unsigned char*)v"
+##
+echo "Flatting include statements in cpp and copying";
+for i in $(ls *.cpp); do
+  sed -i .x -e '1,$s%#include "mbedtls/%#include "%g' $i
+  if [ -e "${i}.x" ];
+  then
+    rm ${i}.x
+  fi
+  sed -i .x -e '1,$s%volatile unsigned char \*p = (unsigned char\*)v%volatile unsigned char \*p = (volatile unsigned char\*)v%g' $i
+  if [ -e "${i}.x" ];
+  then
+    rm ${i}.x
+  fi
+  sed -i .x -e '1,$s%volatile unsigned char \*p = v%volatile unsigned char \*p = (volatile unsigned char\*)v%g' $i
+  if [ -e "${i}.x" ];
+  then
+    rm ${i}.x
+  fi
+  cp $i ${PPD}/
+  if [ -e "${ORIG}/$i" ];
+  then
+    #diff -u ${PPD}/$i ${ORIG}/$i > /dev/null
+    diff -u ${PPD}/$i ${ORIG}/$i 
+  fi
+done
+
+# Update include files
+##
+echo "Copying include files";
+cd ${SRC}/include/mbedtls
+for i in $(ls *.h); do
+  sed -i .x -e '1,$s%#include "mbedtls/%#include "%g' $i
+  if [ -e "${i}.x" ];
+  then
+    rm ${i}.x
+  fi
+  cp $i ${PPD}/
+  if [ -e "${ORIG}/$i" ];
+  then
+    #diff -u ${PPD}/$i ${ORIG}/$i > /dev/null
+    diff -u ${PPD}/$i ${ORIG}/$i 
+  fi
+done
+
+# Make sure NET_C is turned off, it does
+# not apply to embedded projects
+##
+sed -i .x -e '1,$s%^#define MBEDTLS_NET_C%//#define MBEDTLS_NET_C%' config.h
+rm -f config.h.x

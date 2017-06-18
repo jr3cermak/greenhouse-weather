@@ -63,7 +63,7 @@ Program assumptions:
 
 // Use primary serial over USB interface for logging output
 // You can watch logging of the Particle device via CLI:
-// $ particle serial monitor
+// $ particle serial monitor --follow
 SerialLogHandler logHandler;
 
 // Required for sqrt function

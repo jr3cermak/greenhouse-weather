@@ -1,3 +1,52 @@
+# 2017-06-18
+
+Porting axtls library as a possible replacement to the TlsTcpClient.
+So far, the firmware size is about 40% smaller than the mbed openssl
+stack.  It is far from working.  I am using the TlsTcpClient as
+a template.   So far so good.  We are at the point where we are 
+comparing this port output against another in debug mode on a Linux
+platform.   There are a couple borrowed byteswapping routines that
+may or may not be correct for the Particle platform.
+
+REF:
+
+* http://axtls.sourceforge.net/
+* https://developer.mbed.org/users/vshymanskyy/code/Blynk/docs/b942afadf9be/BlynkProtocolDefs_8h_source.html
+* https://fossies.org/linux/misc/mosh-1.3.0.tar.gz/mosh-1.3.0/src/crypto/byteorder.h?m=t
+
+```
+attempting to compile firmware 
+downloading binary from: /v1/binaries/5945f1d65a446b1d25f08ccf
+saving to: tmp.bin
+Memory use: 
+  text    data     bss     dec     hex filename
+ 47892      184    1816   49892    c2e4 /workspace/target/workspace.elf
+
+Compile succeeded.
+Saved firmware to: /Users/cermak/Particle/projects/axtls/src/tmp.bin
+
+0000010133 [comm.sparkprotocol] INFO: Received TIME response: 1497756140
+0000011099 [comm.sparkprotocol] INFO: Sending A describe message
+0000011243 [comm.sparkprotocol] INFO: Sending S describe message
+0000020245 [axtls] INFO: Trying to connect
+0000020245 [axtls] INFO: begin connect()
+0000020246 [axtls] INFO: host:jupyter.lccllc.info port:4443
+0000020251 [axtls] INFO: init() ssl_ctx(0x20007658) send_Tls(0x80a2b8d) recv_Tls(0x80a2b31)
+0000020252 [axtls] INFO: Assigning i/o pathways ssl_ctx(0x20007658) f_send(0x80a2b8d) f_recv(0x80a2b31)
+0000020252 [axtls] INFO: connect() try 1
+0000020483 [axtls] INFO: ssl_client_new()
+0000020484 [axtls] INFO: ssl->version:0x33
+0000020484 [axtls] INFO: do_client_connect()
+0000020484 [axtls] INFO: send_client_hello() ssl(0x20008b10)
+0000020484 [axtls] INFO: send_packet()
+0000020485 [axtls] INFO: send_raw_packet() length=67 msg_length=67
+0000020485 [axtls] INFO: SOCKET_WRITE ssl(0x20008b10) t:72 s:0
+0000020485 [axtls] INFO: sendParticle ssl(0x20008b10) ssl_ctx(0x20007658) f_send(0x80a2b8d)
+0000020486 [axtls] INFO: Wanted to send 72 bytes, sent 72 bytes
+0000020486 [axtls] INFO: Handshake error: -1
+
+```
+
 # 2017-06-08
 
 Reworked two SparkFun sensor libraries so they do not re-initialize

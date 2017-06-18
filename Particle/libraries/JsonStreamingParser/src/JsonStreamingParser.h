@@ -28,7 +28,7 @@ See more at http://blog.squix.ch and https://github.com/squix78/json-streaming-p
 
 #include "application.h"
 
-#include "JsonListener.h"
+#include <JsonListener.h>
 
 #define STATE_START_DOCUMENT     0
 #define STATE_DONE               -1

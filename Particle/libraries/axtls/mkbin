@@ -1,0 +1,77 @@
+#!/bin/bash
+
+# Defines
+##
+DEV=photon
+DEVNAME=testPhoton
+FWV=0.6.2
+MAIN=axtls.ino
+BIN=tmp.bin
+ERROR_LOG=err.txt
+DO_FLASH=0
+DO_BUILD=0
+DO_SFLASH=0
+DO_MONITOR=0
+
+while getopts bfms option
+do
+  case "${option}"
+  in
+    b) DO_BUILD=1;;
+    f) DO_FLASH=1;;
+    m) DO_MONITOR=1;;
+    s) DO_SFLASH=1;;
+  esac
+done
+
+if [ "${DO_BUILD}" == "1" ]; then
+  # Libraries
+  ##
+  TLSLIB="axtls_logging.h `echo ../lib/*.h ../lib/*.cpp`"
+
+  # Bring the total list of libraries together
+  ##
+  LIBS="${TLSLIB}"
+
+  # Remove tmp.bin
+  ##
+  rm -f tmp.bin
+
+  # Compile
+  #   Capture any errors via tee to err.txt
+  ##
+  particle compile ${DEV} ${MAIN} ${LIBS} --saveTo ${BIN} | tee ${ERROR_LOG}
+  if [ ! -e "tmp.bin" ]; then
+    echo "Compile failed.  Errors captured in err.txt.";
+    exit;
+  fi
+
+  # Maintain an old copy 
+  ##
+  if [ -e "upd.bin" ];then
+    cp upd.bin old.bin
+  fi
+  cp tmp.bin upd.bin
+fi
+
+# Flashing
+##
+if [ "${DO_FLASH}" == "1" ]; then
+  if [ "${DEV}" == "photon" ]; then
+    if [ "${DO_SFLASH}" == "0" ]; then
+      particle flash ${DEVNAME} ${BIN}
+    fi
+    if [ "${DO_SFLASH}" == "1" ]; then
+      # Upload via YMODEM
+      ##
+      particle flash --serial ${BIN}
+    fi
+  fi
+fi
+
+sleep 2
+# Monitoring
+##
+if [ "${DO_MONITOR}" == "1" ]; then
+  particle serial monitor --follow
+fi
