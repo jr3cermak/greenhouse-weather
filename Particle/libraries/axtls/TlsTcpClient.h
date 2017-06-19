@@ -63,8 +63,12 @@ public:
   TlsTcpClient();
   ~TlsTcpClient();
   
+  int close();
   int connect(const char* hn, uint16_t port);
+  int connected();
   int init();
+  int read(int timeout);
+  int write(const char* authToken, const char* url);
 
 };
 

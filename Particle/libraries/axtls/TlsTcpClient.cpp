@@ -1,11 +1,28 @@
 #include "TlsTcpClient.h"
 
 
+// Constructor
 TlsTcpClient::TlsTcpClient() {
   _connected = false;
 }
 
+// Destructor
 TlsTcpClient::~TlsTcpClient() {
+  this->close();
+}
+
+// Close connection
+int TlsTcpClient::close() {
+  if (_connected) {
+    ssl_free(ssl);
+    ssl_ctx_free(ssl_ctx);
+    _client.stop();
+    _connected = false;
+    debug_tls("close()");
+    return 0;
+  }
+  debug_tls("close() failed");
+  return -1;
 }
 
 // Connnect to remote server and begin negotiation
@@ -50,7 +67,7 @@ int TlsTcpClient::connect(const char* hn, uint16_t port) {
     retry++;
     debug_tls("connect() try %d", retry);
     if (_client.connect(hn, port)) {
-      _connected = 1;
+      _connected = true;
     } else {
       delay(CONFIG_SSL_CLIENT_RETRY_TIMEOUT);
     }
@@ -73,9 +90,10 @@ int TlsTcpClient::connect(const char* hn, uint16_t port) {
                 {
                     ssl_display_error(res);
                 }
-
                 ssl_free(ssl);
-                //exit(1);
+                ssl_ctx_free(ssl_ctx);
+                _client.stop();
+                _connected = false;
                 return 1;
             }
 
@@ -91,7 +109,8 @@ int TlsTcpClient::connect(const char* hn, uint16_t port) {
                 //client_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
                 //connect(client_fd, (struct sockaddr *)&client_addr, 
                 //        sizeof(client_addr));
-                _client.connect(hn, port);
+                _connected = _client.connect(hn, port);
+                // Should bail here if _connect returns false
             }
         }
     }
@@ -109,7 +128,10 @@ int TlsTcpClient::connect(const char* hn, uint16_t port) {
             ssl_display_error(res);
         }
         debug_tls("Handshake error: %d",res);
-        //exit(1);
+        ssl_free(ssl);
+        ssl_ctx_free(ssl_ctx);
+        _client.stop();
+        _connected = false;
         return 1;
     }
 
@@ -120,8 +142,17 @@ int TlsTcpClient::connect(const char* hn, uint16_t port) {
     }
 
     // At this point we are connected and verified over SSL
-    // or not connected
+    // or not connected. 
+    // res = 0 (success)
+    // res = !0 (failed)
+    // We can also check the state of !_connected
+    debug_tls("connect():%d",res);
     return res;
+}
+
+// Return the connection status
+int TlsTcpClient::connected() {
+  return _connected;
 }
 
 // Initialize the IO between this app and
@@ -129,8 +160,13 @@ int TlsTcpClient::connect(const char* hn, uint16_t port) {
 int TlsTcpClient::init() {
   int ret = 0;
 
+  if (_connected) {
+    this->close();
+  }
   _connected = false;
-  _options = SSL_SERVER_VERIFY_LATER|SSL_DISPLAY_CERTS|SSL_DISPLAY_BYTES;
+  _options = SSL_SERVER_VERIFY_LATER|SSL_DISPLAY_CERTS;
+  //DEBUGGING
+  //_options = SSL_SERVER_VERIFY_LATER|SSL_DISPLAY_CERTS|SSL_DISPLAY_BYTES;
 
   if (ssl_ctx == NULL) {
     debug_tls("init()");
@@ -141,6 +177,101 @@ int TlsTcpClient::init() {
   }
   
   return ret;
+}
+
+// Read from the server until the timeout is seen
+int TlsTcpClient::read(int timeout) {
+  int ctimeout = 0;
+  int res = 0;
+  unsigned char *readbuffer;
+  char buf[512] = { 0 };
+  int bptr = 0;
+  unsigned int i;
+  unsigned char ch;
+  int nb;
+
+  debug_tls("read:begin()");
+
+  // Wait a timeout or a valid response
+  while (ctimeout < timeout and res == 0) {
+    if (_connected) {
+      if (_client.available() > 0) {
+        nb = ssl_read(ssl, &readbuffer);
+        if (nb > 0) {
+          debug_tls("read(%d)",strlen((char*)readbuffer));
+          for (i = 0; i < strlen((char*)readbuffer); i++) {
+            ch = readbuffer[i];
+            if (ch == 10 || ch == 13) {
+              if (bptr > 0) {
+                debug_tls("web>%s",(const char*)buf);
+                bptr = 0;
+                memset(buf, 0, sizeof(buf));
+              }
+            } else {
+              snprintf(buf+bptr,512-bptr,"%c",ch);
+              bptr++;
+            }
+          }
+          if (bptr > 0) {
+            debug_tls("web>%s",(const char*)buf);
+            bptr = 0;
+            memset(buf, 0, sizeof(buf));
+          }
+        } else {
+          if (nb < 0) {
+            res = nb;
+          }
+        }
+        ctimeout = 0;
+      } else {
+        Particle.process();
+        delay(100);
+      }
+    } else {
+      res = -1;
+    }
+    ctimeout++;
+  }
+
+  // The connection closed or died
+  if (res < 0) {
+      ssl_free(ssl);
+      ssl_ctx_free(ssl_ctx);
+      _client.stop();
+      _connected = false;
+  }
+  debug_tls("read:end(%d)",res);
+  return res;
+}
+
+// Send items to the server
+int TlsTcpClient::write(const char *authToken, const char *url) {
+
+  unsigned char* data = (unsigned char *) malloc(sizeof(unsigned char) * 400);
+  int res = 0;
+  int len = 0;
+
+  if (_connected) {
+    sprintf((char *)data, "GET %s HTTP/1.1\r\n",url);
+    //sprintf(data, "%sHost: things.ubidots.com\r\nUser-Agent: %s/%s\r\n", data, USER_AGENT, VERSION);
+    sprintf((char *)data, "%sHost: things.ubidots.com\r\nUser-Agent: %s/%s\r\n", data, "axTLS", "2.3.1a");
+    //len = sprintf((char *)data, "%sX-Auth-Token: %s\r\nConnection: close\r\n\r\n", data, authToken);
+    len = sprintf((char *)data, "%sX-Auth-Token: %s\r\n\r\n", data, authToken);
+
+    Particle.process();
+    res = ssl_write(ssl, data, strlen((char *)data));
+
+    if (res < 0) {
+      ssl_free(ssl);
+      ssl_ctx_free(ssl_ctx);
+      _client.stop();
+      _connected = false;
+      res = -1;
+    } else {
+      debug_tls("successfully wrote to ssl_write()");
+    }
+  }
+  return res;
 }
 
 // This is the SOCKET_READ we need
@@ -202,10 +333,10 @@ int TlsTcpClient::send_Tls(void *ssl, uint8_t *out_data, int out_len) {
   debug_tls("sock->connected():%d sock->available():%d", sock->connected(), sock->available());
   if (sock->connected()) {
     ret = sock->write(out_data, out_len);
+    sock->flush();
   } else {
     return -1;
   }
-  sock->flush();
 
   // Allow the WiFi module to catch up
   Particle.process();

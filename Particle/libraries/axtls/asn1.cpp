@@ -32,6 +32,10 @@
  * Some primitive asn methods for extraction ASN.1 data.
  */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -774,3 +778,6 @@ end_check_sig:
     return ret;
 }
 
+#ifdef __cplusplus
+}
+#endif

@@ -69,7 +69,7 @@ EXP_FUNC SSL * STDCALL ssl_client_new(SSL_CTX *ssl_ctx, int client_fd, const
 {
     SSL *ssl = ssl_new(ssl_ctx, client_fd);
     ssl->version = SSL_PROTOCOL_VERSION_MAX; /* try top version first */
-    debug_tls("ssl->version:0x%00x",ssl->version);
+    debug_tls("ssl->version:0x%02x",ssl->version);
 
     if (session_id && ssl_ctx->num_sessions)
     {

@@ -6,6 +6,9 @@ REF:
 
 # 2017-06-18
 
+Got it.  We are getting the appropriate responses from the server!  Now to clean up
+and add documentation.
+
 99% there... I think we are now decrypting https sites.  We have to plug this into
 the Ubidots REST API to see if we are doing things correctly.
 
