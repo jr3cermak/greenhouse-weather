@@ -18,9 +18,14 @@ TlsTcpClient testMe;
 
 int sentCmd(String command) {
   // try to connect
-  if (command == "c") {
+  if (command == "j") {
     debug_tls("Trying to connect");
     testMe.connect("jupyter.lccllc.info", 4443);
+    return 1;
+  }
+  if (command == "t") {
+    debug_tls("Trying to connect");
+    testMe.connect("things.ubidots.com", 443);
     return 1;
   }
   if (command == "i") {

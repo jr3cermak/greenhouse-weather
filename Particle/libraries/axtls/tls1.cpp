@@ -2271,7 +2271,7 @@ void DISPLAY_RSA(SSL *ssl, const RSA_CTX *rsa_ctx)
     TTY_FLUSH();
 }
 
-#if !defined(CONFIG_PLATFORM_PARTICLE)
+#if defined(CONFIG_PLATFORM_PARTICLE)
 /**
  * Debugging routine to display SSL handshaking bytes.
  */
@@ -2289,7 +2289,8 @@ void DISPLAY_BYTES(SSL *ssl, const char *format,
     TTY_FLUSH();
 }
 #else
-// Particle platform does not do tty i/o
+// Particle platform does not do tty i/o, we need to
+// do something else. 
 void DISPLAY_BYTES(SSL *ssl, const char *format, 
         const uint8_t *data, int size, ...) {}
 #endif

@@ -38,6 +38,7 @@
 #include <stdio.h>
 #include "os_port.h"
 #include "crypto_misc.h"
+#include "axtls_logging.h"
 #ifdef CONFIG_WIN32_USE_CRYPTO_LIB
 #include "wincrypt.h"
 #endif
@@ -295,11 +296,81 @@ EXP_FUNC void STDCALL print_blob(const char *format,
     va_end(ap);
     TTY_FLUSH();
 }
-#else
+#else /* CONFIG_PLATFORM_PARTICLE SAFE */
 // Particle platform does not use tty I/O
-EXP_FUNC void STDCALL print_blob(const char *format, const unsigned char *data,
-        int size, ...) {}
-#endif
+int hex_finish;
+int hex_index;
+char buf[256];
+int bsiz = sizeof(buf); 
+int bidx = 0;
+
+static void print_hex_init(int finish)
+{
+    hex_finish = finish;
+    hex_index = 0;
+}
+
+static void print_hex(uint8_t hex)
+{
+    static int column;
+
+    if (hex_index == 0)
+    {
+        column = 0;
+    }
+
+    //printf("%02x ", hex);
+    bidx = bidx + snprintf(buf+bidx,bsiz-bidx,"%02x ",hex);
+    if (++column == 8)
+    {
+        //printf(": ");
+        bidx = bidx + snprintf(buf+bidx,bsiz-bidx,": ");
+    }
+    else if (column >= 16)
+    {
+        //printf("\n");
+        debug_tls("%s",buf);
+        bidx = 0;
+        column = 0;
+    }
+
+    if (++hex_index >= hex_finish && column > 0)
+    {
+        //printf("\n");
+        debug_tls("%s",buf);
+        bidx = 0;
+    }
+}
+
+/**
+ * Spit out a blob of data for diagnostics. The data is is a nice column format
+ * for easy reading.
+ *
+ * @param format   [in]    The string (with possible embedded format characters)
+ * @param size     [in]    The number of numbers to print
+ * @param data     [in]    The start of data to use
+ * @param ...      [in]    Any additional arguments
+ */
+EXP_FUNC void STDCALL print_blob(const char *format, 
+        const uint8_t *data, int size, ...)
+{
+    int i;
+    char tmp[80];
+    va_list(ap);
+
+    va_start(ap, format);
+    vsnprintf(tmp, 80, format, ap);
+    debug_tls(tmp);
+    print_hex_init(size);
+    for (i = 0; i < size; i++)
+    {
+        print_hex(data[i]);
+    }
+
+    va_end(ap);
+    TTY_FLUSH();
+}
+#endif /* CONFIG_PLATFORM_PARTICLE */
 #elif defined(WIN32)
 /* VC6.0 doesn't handle variadic macros */
 EXP_FUNC void STDCALL print_blob(const char *format, const unsigned char *data,
@@ -308,7 +379,7 @@ EXP_FUNC void STDCALL print_blob(const char *format, const unsigned char *data,
 
 #if defined(CONFIG_SSL_HAS_PEM) || defined(CONFIG_HTTP_HAS_AUTHORIZATION)
 /* base64 to binary lookup table */
-static const uint8_t map[128] =
+static const uint8_t b64map[128] =
 {
     255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
     255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
@@ -333,7 +404,7 @@ EXP_FUNC int STDCALL base64_decode(const char *in, int len,
     g = 3;
     for (x = y = z = t = 0; x < len; x++)
     {
-        if ((c = map[in[x]&0x7F]) == 0xff)
+        if ((c = b64map[in[x]&0x7F]) == 0xff)
             continue;
 
         if (c == 254)   /* this is the end... */

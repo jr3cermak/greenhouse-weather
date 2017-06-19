@@ -130,7 +130,7 @@ int TlsTcpClient::init() {
   int ret = 0;
 
   _connected = false;
-  _options = SSL_SERVER_VERIFY_LATER|SSL_DISPLAY_CERTS;
+  _options = SSL_SERVER_VERIFY_LATER|SSL_DISPLAY_CERTS|SSL_DISPLAY_BYTES;
 
   if (ssl_ctx == NULL) {
     debug_tls("init()");
@@ -145,26 +145,46 @@ int TlsTcpClient::init() {
 
 // This is the SOCKET_READ we need
 // We pass this into axtls library as
-// a function callback.
+// a function callback. 
+// We need to introduce a timer to wait for
+// the desired number of bytes.
+// 
 int TlsTcpClient::recv_Tls(void *ssl, uint8_t *in_data, int in_len) {
   int ret = 0;
+  int timeout = 0;
 
   // We have to extract the _client pointer
   SSL *real_ssl = (SSL *)ssl;
   TCPClient *sock = (TCPClient *) real_ssl->ssl_ctx->_client;
 
+  debug_tls("Want %d byte(s)",in_len);
+  Particle.process();
+
   debug_tls("ssl(%p) ssl_ctx(%p) sock(%p)",real_ssl,real_ssl->ssl_ctx,sock);
   debug_tls("sock->connected():%d sock->available():%d", sock->connected(), sock->available());
-  if (sock->connected()) {
-    if (sock->available() > 0) {
-      ret = sock->read(in_data, in_len);
+
+  // Loop here for a bit until we get data or we timeout
+  while (ret == 0 && timeout < CONFIG_HTTP_TIMEOUT) {
+    if (sock->connected()) {
+      if (sock->available() > 0) {
+        ret = sock->read(in_data, in_len);
+      } else {
+        delay(10); // 0.01s (300 ~ 3s)
+        Particle.process();
+        timeout++;
+      }
     } else {
+      // No longer connected, return a bad result
       ret = -1;
     }
+  }
+  // Check for timeout
+  if (timeout >= CONFIG_HTTP_TIMEOUT) {
+    debug_tls("TCP read() timeout");
     ret = -1;
   }
 
-  debug_tls("Want %d bytes, got %d bytes",in_len,ret);
+  debug_tls("Got %d byte(s)",ret);
   return ret;
 }
 
@@ -187,6 +207,8 @@ int TlsTcpClient::send_Tls(void *ssl, uint8_t *out_data, int out_len) {
   }
   sock->flush();
 
+  // Allow the WiFi module to catch up
+  Particle.process();
   debug_tls("Wanted to send %d bytes, sent %d bytes", out_len, ret);
 
   return ret;
