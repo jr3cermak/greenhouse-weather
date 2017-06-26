@@ -1,3 +1,9 @@
+# 2017-06-19
+
+Initial proof of concept tests show that things are generally working.  Time to
+rewrite things into a proper library.  [Follow](https://github.com/jr3cermak/particle) progress
+in now a specific repo for Particle items intended for public release.
+
 # 2017-06-18
 
 Porting axtls library as a possible replacement to the TlsTcpClient.
@@ -257,7 +263,7 @@ to get GreenXBee.ino started to respond.
 
 Refactored HomeXBee.ino so the serial device can be easily changed without
 changing a lot of code.  The python mraa library is a pain.  We are just
-going to pass 32 bytes.  We can't read char by char as the readByte() 
+going to pass 32 bytes.  We can not read char by char as the readByte() 
 function will just read a byte and trash the rest of the message.  We
 might consider refactoring back to the python module smbus.   There is
 a smbus2 library.  Will clean up the python code and post that soon.
@@ -300,7 +306,7 @@ Use Arduino QueueList library to extend ease of I2C communication by
 queuing commands and responses.
 
 A basic program for HomeXBee.ino is working.  A python program based on the
-library mraa to talk to the Arduino over I2C works.  It isn't the best as
+library mraa to talk to the Arduino over I2C works.  It is not the best as
 it lacks a lot of the Arduino features.  We are going to rely on reading
 bytes from the Arduino.  Need to filter responses from missing data (char=0),
 no data available(char=255) and the good data.
