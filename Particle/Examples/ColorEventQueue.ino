@@ -43,8 +43,13 @@ void doEvent() {
 
 // setup() runs once, when the device is first turned on.
 void setup() {
+  String devId;
   // Do not need this, this helps group program output at the end
   delay(10000);
+
+  // Display device ID just for grins
+  devId = System.deviceID();
+  Log.info("Device ID(%s)",(const char *) devId);
 
   // Create a variable with the defined structure
   eventColor event;
